@@ -51,13 +51,6 @@ commands:
     permission: headhunter.admin
     permission-message: You do not have permission to use this command.
 
-  givebanknote:
-    description: Give a bank note of the specified tier to a player
-    usage: /givebanknote <player> <tier> [amount]
-    permission: headhunter.admin
-    permission-message: You do not have permission to use this command.
-    default: op
-
   hh:
     description: HeadHunter admin commands
     usage: /hh <give|setlevel|setxp|rankup|reset|info|reload>

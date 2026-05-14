@@ -22,7 +22,7 @@ import java.util.UUID;
  * <p>Requirements to rank up:
  * <ol>
  *   <li>Player's total XP must be ≥ the XP threshold for the next level.</li>
- *   <li>Player must have ≥ {@code rankup-cost} money (Vault).</li>
+ *   <li>Player must have ≥ {@code cost_to_rankup} money (Vault).</li>
  * </ol>
  * On success, money is deducted and the stored level is incremented by 1.</p>
  */
@@ -31,64 +31,64 @@ public class RankUpCommand implements CommandExecutor {
     private final JavaPlugin plugin;
     private final PlayerDataManager playerData;
     private final Economy economy;
-    /** Active rankup boss bars keyed by player UUID. */
+    private final MessagesConfig messages;
+    private final SidebarConfig sidebarConfig;
     private final HashMap<UUID, BossBar> activeBossBars = new HashMap<>();
 
-    public RankUpCommand(JavaPlugin plugin, PlayerDataManager playerData, Economy economy) {
-        this.plugin = plugin;
-        this.playerData = playerData;
-        this.economy = economy;
+    public RankUpCommand(JavaPlugin plugin, PlayerDataManager playerData, Economy economy,
+                         MessagesConfig messages, SidebarConfig sidebarConfig) {
+        this.plugin        = plugin;
+        this.playerData    = playerData;
+        this.economy       = economy;
+        this.messages      = messages;
+        this.sidebarConfig = sidebarConfig;
     }
 
     @Override
     public boolean onCommand(CommandSender sender, Command command, String label, String[] args) {
         if (!(sender instanceof Player player)) {
-            sender.sendMessage("This command can only be run by a player.");
+            sender.sendMessage(messages.getRaw("console-only"));
             return true;
         }
 
-        UUID uuid        = player.getUniqueId();
+        UUID uuid         = player.getUniqueId();
         int  currentLevel = playerData.getLevel(uuid);
 
-        // Already maxed out.
-        if (currentLevel >= PlayerDataManager.MAX_LEVEL) {
-            player.sendMessage(msg("&cYou are already at the maximum level!"));
+        if (currentLevel >= playerData.getMaxLevel()) {
+            player.sendMessage(messages.get("rankup-max-level"));
             return true;
         }
 
         int nextLevel = currentLevel + 1;
 
-        // ── XP gate ──────────────────────────────────────────────────────────
         long currentXP  = playerData.getXP(uuid);
         long xpRequired = playerData.xpToReachLevel(nextLevel);
         if (currentXP < xpRequired) {
-            player.sendMessage(msg(
-                    "&cYou don't have enough XP to rank up! &e"
-                    + currentXP + "/" + xpRequired + " XP"));
+            player.sendMessage(messages.get("rankup-xp-missing",
+                    "current", String.valueOf(currentXP),
+                    "required", String.valueOf(xpRequired)));
             return true;
         }
 
-        // ── Money gate ───────────────────────────────────────────────────────
         long rankupCost = playerData.getRankupCost(currentLevel);
         if (economy != null && economy.getBalance(player) < rankupCost) {
             long difference = rankupCost - (long) economy.getBalance(player);
-            player.sendMessage(msg("&c&l[!] &fYou need &e$" + difference + " &fmore to rankup to &eLevel " + nextLevel + "&f!"));
+            player.sendMessage(messages.get("rankup-money-missing",
+                    "amount", String.valueOf(difference),
+                    "level", String.valueOf(nextLevel)));
             return true;
         }
 
-        // ── All checks passed — execute rankup ───────────────────────────────
-        if (economy != null) {
-            economy.withdrawPlayer(player, (double) rankupCost);
-        }
+        if (economy != null) economy.withdrawPlayer(player, (double) rankupCost);
 
         int oldTier = playerData.getTier(uuid);
         playerData.setLevel(uuid, nextLevel);
         playerData.setXP(uuid, 0);
         int newTier = playerData.getTier(uuid);
 
-        player.sendMessage(msg("&a&lRANK UP! &eYou are now level " + nextLevel + "!"));
+        player.sendMessage(messages.get("rankup-success", "level", String.valueOf(nextLevel)));
         if (newTier > oldTier) {
-            player.sendMessage(msg("&b&lTier " + newTier + " unlocked!"));
+            player.sendMessage(messages.get("rankup-tier-unlock", "tier", String.valueOf(newTier)));
         }
 
         showRankUpBar(player, nextLevel, newTier);
@@ -96,15 +96,12 @@ public class RankUpCommand implements CommandExecutor {
         return true;
     }
 
-    // -------------------------------------------------------------------------
-    // Rank-up effects
-    // -------------------------------------------------------------------------
-
     private void playRankUpEffects(Player player, int newLevel, int oldTier, int newTier) {
-        // Title: §6§lRANK UP! / §eYou are now Level X!
         Title title = Title.title(
-                LegacyComponentSerializer.legacySection().deserialize("§6§lRANK UP!"),
-                LegacyComponentSerializer.legacySection().deserialize("§eYou are now Level " + newLevel + "!"),
+                LegacyComponentSerializer.legacySection().deserialize(
+                        messages.getRaw("rankup-title-top").replace("&", "§")),
+                LegacyComponentSerializer.legacySection().deserialize(
+                        messages.getRaw("rankup-title-sub", "level", String.valueOf(newLevel)).replace("&", "§")),
                 Title.Times.times(
                         Duration.ofMillis(500),
                         Duration.ofMillis(3000),
@@ -113,21 +110,11 @@ public class RankUpCommand implements CommandExecutor {
         );
         player.showTitle(title);
 
-        // Totem of undying particle burst.
-        player.getWorld().spawnParticle(
-                Particle.TOTEM_OF_UNDYING,
-                player.getLocation().add(0, 1, 0),
-                200, 0.5, 1.0, 0.5, 0.3
-        );
+        player.getWorld().spawnParticle(Particle.TOTEM_OF_UNDYING,
+                player.getLocation().add(0, 1, 0), 200, 0.5, 1.0, 0.5, 0.3);
+        player.getWorld().spawnParticle(Particle.END_ROD,
+                player.getLocation().add(0, 1, 0), 150, 1.5, 1.5, 1.5, 0.1);
 
-        // END_ROD particle burst — sphere radius 2 around the player.
-        player.getWorld().spawnParticle(
-                Particle.END_ROD,
-                player.getLocation().add(0, 1, 0),
-                150, 1.5, 1.5, 1.5, 0.1
-        );
-
-        // Firework burst at the player's location.
         org.bukkit.Color[] brightColors = {
                 org.bukkit.Color.AQUA, org.bukkit.Color.FUCHSIA, org.bukkit.Color.YELLOW,
                 org.bukkit.Color.LIME, org.bukkit.Color.RED, org.bukkit.Color.ORANGE
@@ -141,46 +128,36 @@ public class RankUpCommand implements CommandExecutor {
         meta.addEffect(org.bukkit.FireworkEffect.builder()
                 .withColor(randomColor)
                 .with(org.bukkit.FireworkEffect.Type.BALL_LARGE)
-                .flicker(true)
-                .trail(true)
-                .build());
+                .flicker(true).trail(true).build());
         firework.setFireworkMeta(meta);
 
-        // Server-wide broadcast on tier unlock.
         if (newTier > oldTier) {
             Component broadcast = LegacyComponentSerializer.legacySection().deserialize(
-                    "§6§l[!] §e" + player.getName() + " §6has reached §b§lTier " + newTier + "§6! §7\uD83C\uDF89"
-            );
+                    messages.getRaw("rankup-broadcast",
+                            "player", player.getName(),
+                            "tier", String.valueOf(newTier)).replace("&", "§"));
             plugin.getServer().getOnlinePlayers().forEach(p -> p.sendMessage(broadcast));
         }
     }
 
-    // -------------------------------------------------------------------------
-    // Boss bar
-    // -------------------------------------------------------------------------
-
     private void showRankUpBar(Player player, int newLevel, int tier) {
         UUID uuid = player.getUniqueId();
 
-        // XP progress within the new stored level toward the next rankup.
         long totalXP          = playerData.getXP(uuid);
         long xpAtCurrentLevel = playerData.xpToReachLevel(newLevel);
         long xpInLevel        = Math.max(0, totalXP - xpAtCurrentLevel);
         long xpForLevel       = playerData.xpForLevel(newLevel);
-        boolean maxed = newLevel >= PlayerDataManager.MAX_LEVEL;
+        boolean maxed = newLevel >= playerData.getMaxLevel();
         float fill    = maxed ? 1.0f : Math.min(1.0f, (float) xpInLevel / xpForLevel);
 
-        BossBar.Color color = switch (tier) {
-            case 1  -> BossBar.Color.GREEN;
-            case 2  -> BossBar.Color.YELLOW;
-            case 3  -> BossBar.Color.WHITE;   // Adventure API has no GOLD
-            case 4  -> BossBar.Color.RED;
-            case 5  -> BossBar.Color.PURPLE;
-            default -> BossBar.Color.WHITE;
-        };
+        BossBar.Color color = sidebarConfig.getTierBossBarColor(tier);
 
-        String titleStr = "§a§lRANK UP! §eLevel " + newLevel
-                + (tier > ((newLevel - 2) / 5 + 1) ? " §8| §bTier " + tier + " unlocked!" : "");
+        String titleStr = messages.getRaw("rankup-bar", "level", String.valueOf(newLevel));
+        if (tier > ((newLevel - 2) / 5 + 1)) {
+            titleStr += messages.getRaw("rankup-bar-tier", "tier", String.valueOf(tier));
+        }
+        titleStr = titleStr.replace("&", "§");
+
         Component title = LegacyComponentSerializer.legacySection().deserialize(titleStr);
         BossBar bar = BossBar.bossBar(title, fill, color, BossBar.Overlay.PROGRESS);
 
@@ -198,14 +175,9 @@ public class RankUpCommand implements CommandExecutor {
         }, 60L);
     }
 
-    /** Fires all rank-up visual effects on the player without changing their level. */
     public void runTestEffects(Player player) {
         int level = playerData.getLevel(player.getUniqueId());
         int tier  = playerData.getTier(player.getUniqueId());
         playRankUpEffects(player, level, tier - 1, tier);
-    }
-
-    private static Component msg(String legacy) {
-        return LegacyComponentSerializer.legacyAmpersand().deserialize(legacy);
     }
 }

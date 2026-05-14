@@ -63,7 +63,7 @@ public class SpawnerStackManager implements Listener {
             new NamespacedKey("headhunter", "stack_size");
 
     private final JavaPlugin plugin;
-    private final SpawnRateConfig spawnRateConfig;
+    private final SpawnerConfig spawnerConfig;
     private final int maxStack;
 
     /** Location string → active BukkitTask for that spawner. */
@@ -75,10 +75,10 @@ public class SpawnerStackManager implements Listener {
     /** Location string → UUID of the floating TextDisplay label. */
     private final Map<String, UUID> labels = new HashMap<>();
 
-    public SpawnerStackManager(JavaPlugin plugin, SpawnRateConfig spawnRateConfig) {
-        this.plugin = plugin;
-        this.spawnRateConfig = spawnRateConfig;
-        this.maxStack = plugin.getConfig().getInt("spawner-stack-max", 50);
+    public SpawnerStackManager(JavaPlugin plugin, SpawnerConfig spawnerConfig) {
+        this.plugin         = plugin;
+        this.spawnerConfig  = spawnerConfig;
+        this.maxStack       = spawnerConfig.getStackMax();
         load();
     }
 
@@ -109,7 +109,7 @@ public class SpawnerStackManager implements Listener {
         int current = stackCounts.getOrDefault(locKey, 1);
 
         if (current >= maxStack) {
-            player.sendMessage(msg("&cThis spawner is already at the maximum stack size of &e" + maxStack + "&c."));
+            player.sendMessage(msg("&c&l(!) &cThis spawner is already at the maximum stack size of &b" + maxStack + "&c."));
             event.setCancelled(true);
             return;
         }
@@ -136,7 +136,7 @@ public class SpawnerStackManager implements Listener {
         restartTask(clicked.getLocation(), placedType, newCount);
         save();
 
-        player.sendMessage(msg("&aMerged &e1 &aspawner. Stack is now &e" + newCount + "/" + maxStack + "&a."));
+        player.sendMessage(msg("&c&l(!) &aMerged &b1 &aspawner. Stack is now &b" + newCount + "/" + maxStack + "&a."));
         event.setCancelled(true);
     }
 
@@ -175,8 +175,6 @@ public class SpawnerStackManager implements Listener {
             blockPdc.remove(SPAWNER_STACK_KEY);
         }
         cs.update();
-
-        if (count <= 1) return; // single spawner — no custom task needed
 
         String locKey = locKey(placed.getLocation());
 
@@ -248,7 +246,7 @@ public class SpawnerStackManager implements Listener {
         BukkitTask old = tasks.remove(locKey);
         if (old != null) old.cancel();
 
-        double rateSeconds = spawnRateConfig.getRate(type.name());
+        double rateSeconds = spawnerConfig.getSpawnRate(type.name());
         long periodTicks = Math.max(1L, Math.round(rateSeconds * 20.0));
 
         BukkitTask task = plugin.getServer().getScheduler().runTaskTimer(plugin, () -> {
@@ -279,7 +277,7 @@ public class SpawnerStackManager implements Listener {
                 int next = Math.min(current + stackCount, 9999);
                 existingLeader.getPersistentDataContainer()
                         .set(MOB_STACK_KEY, PersistentDataType.INTEGER, next);
-                existingLeader.setCustomName("§e§l" + formatMobName(type) + " §f§lx§6§l" + next);
+                existingLeader.setCustomName("§b§l" + formatMobName(type) + " §f§lx§6§l" + next);
                 existingLeader.setCustomNameVisible(true);
             } else {
                 // No stack yet — defer to the next tick so MobStackManager's
@@ -298,7 +296,7 @@ public class SpawnerStackManager implements Listener {
                     if (spawned instanceof LivingEntity le && stackCount > 1) {
                         le.getPersistentDataContainer()
                                 .set(MOB_STACK_KEY, PersistentDataType.INTEGER, stackCount);
-                        le.setCustomName("§e§l" + formatMobName(type) + " §f§lx§6§l" + stackCount);
+                        le.setCustomName("§b§l" + formatMobName(type) + " §f§lx§6§l" + stackCount);
                         le.setCustomNameVisible(true);
                     }
                 });
@@ -352,7 +350,7 @@ public class SpawnerStackManager implements Listener {
 
     /** Writes all active stacked spawners to {@code spawners.yml} in the plugin data folder. */
     private void save() {
-        File file = new File(plugin.getDataFolder(), "spawners.yml");
+        File file = new File(plugin.getDataFolder(), "spawner-data.yml");
         YamlConfiguration config = new YamlConfiguration();
 
         int idx = 0;
@@ -380,7 +378,7 @@ public class SpawnerStackManager implements Listener {
             plugin.getDataFolder().mkdirs();
             config.save(file);
         } catch (IOException e) {
-            plugin.getLogger().warning("Failed to save spawners.yml: " + e.getMessage());
+            plugin.getLogger().warning("Failed to save spawner-data.yml: " + e.getMessage());
         }
     }
 
@@ -390,7 +388,7 @@ public class SpawnerStackManager implements Listener {
      * normal server start so block lookups are safe here.
      */
     private void load() {
-        File file = new File(plugin.getDataFolder(), "spawners.yml");
+        File file = new File(plugin.getDataFolder(), "spawner-data.yml");
         if (!file.exists()) return;
 
         YamlConfiguration config = YamlConfiguration.loadConfiguration(file);
@@ -417,14 +415,14 @@ public class SpawnerStackManager implements Listener {
 
             World world = plugin.getServer().getWorld(worldName);
             if (world == null) {
-                plugin.getLogger().warning("spawners.yml: world '" + worldName + "' not loaded, skipping entry " + key);
+                plugin.getLogger().warning("spawner-data.yml: world '" + worldName + "' not loaded, skipping entry " + key);
                 continue;
             }
 
             EntityType type;
             try { type = EntityType.valueOf(typeStr); }
             catch (IllegalArgumentException e) {
-                plugin.getLogger().warning("spawners.yml: unknown entity type '" + typeStr + "', skipping entry " + key);
+                plugin.getLogger().warning("spawner-data.yml: unknown entity type '" + typeStr + "', skipping entry " + key);
                 continue;
             }
 
@@ -457,7 +455,7 @@ public class SpawnerStackManager implements Listener {
                 updateLabel(e.loc(), e.type(), e.count());
                 restartTask(e.loc(), e.type(), e.count());
             }
-            plugin.getLogger().info("Restored " + valid.size() + " stacked spawner(s) from spawners.yml.");
+            plugin.getLogger().info("Restored " + valid.size() + " stacked spawner(s) from spawner-data.yml.");
         }, 40L);
     }
 
@@ -470,7 +468,7 @@ public class SpawnerStackManager implements Listener {
         removeLabel(locKey);
         if (count <= 1) return;
 
-        String text = "§e§l" + formatMobName(type) + " Spawner §6§lx" + count;
+        String text = "§b§l" + formatMobName(type) + " Spawner §6§lx" + count;
         Component component = LegacyComponentSerializer.legacySection().deserialize(text);
 
         Location labelLoc = loc.clone().add(0.5, 1.5, 0.5);
@@ -541,7 +539,7 @@ public class SpawnerStackManager implements Listener {
         return cs.getSpawnedType();
     }
 
-    static ItemStack buildSpawnerItem(EntityType type, int count, JavaPlugin plugin) {
+    static ItemStack buildSpawnerItem(EntityType type, int count, MobsConfig mobsConfig) {
         ItemStack item = new ItemStack(Material.SPAWNER);
         ItemMeta meta = item.getItemMeta();
 
@@ -552,19 +550,18 @@ public class SpawnerStackManager implements Listener {
         updateItemName(meta, type);
         meta.addItemFlags(org.bukkit.inventory.ItemFlag.HIDE_ADDITIONAL_TOOLTIP);
 
-        // Lore
         List<Component> lore = new ArrayList<>();
-        ConfigurationSection section = type != null
-                ? plugin.getConfig().getConfigurationSection("mobs." + type.name())
+        ConfigurationSection section = (type != null && mobsConfig != null)
+                ? mobsConfig.getMobSection(type.name())
                 : null;
         String levelStr = (section != null && section.contains("level"))
                 ? String.valueOf(section.getInt("level", 0))
                 : "N/A";
-        lore.add(loreComponent("§fLevel: §e" + levelStr));
+        lore.add(loreComponent("§fLevel: §b" + levelStr));
         if (section != null) {
             String customDrop = section.getString("custom_drop", "");
             if (customDrop != null && !customDrop.isBlank()) {
-                lore.add(loreComponent("§fCustom Drop: §e" + customDrop));
+                lore.add(loreComponent("§fCustom Drop: §b" + customDrop));
             }
         }
         meta.lore(lore);
@@ -576,7 +573,7 @@ public class SpawnerStackManager implements Listener {
 
     /** Convenience overload used internally. */
     private ItemStack buildSpawnerItem(EntityType type, int count) {
-        return buildSpawnerItem(type, count, plugin);
+        return buildSpawnerItem(type, count, (MobsConfig) null);
     }
 
     private static void updateItemName(ItemMeta meta, EntityType type) {
@@ -592,8 +589,8 @@ public class SpawnerStackManager implements Listener {
     // -------------------------------------------------------------------------
 
     private static Location jitterLocation(Location base) {
-        double ox = (Math.random() - 0.5) * 3.0;
-        double oz = (Math.random() - 0.5) * 3.0;
+        double ox = (1.0 + Math.random() * 0.5) * (Math.random() < 0.5 ? 1 : -1);
+        double oz = (1.0 + Math.random() * 0.5) * (Math.random() < 0.5 ? 1 : -1);
         return base.clone().add(0.5 + ox, 0.5, 0.5 + oz);
     }
 

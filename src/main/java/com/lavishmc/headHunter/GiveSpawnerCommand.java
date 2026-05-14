@@ -1,7 +1,5 @@
 package com.lavishmc.headHunter;
 
-import net.kyori.adventure.text.Component;
-import net.kyori.adventure.text.serializer.legacy.LegacyComponentSerializer;
 import org.bukkit.Bukkit;
 import org.bukkit.command.Command;
 import org.bukkit.command.CommandExecutor;
@@ -10,7 +8,6 @@ import org.bukkit.command.TabCompleter;
 import org.bukkit.entity.EntityType;
 import org.bukkit.entity.Player;
 import org.bukkit.inventory.ItemStack;
-import org.bukkit.plugin.java.JavaPlugin;
 
 import java.util.Arrays;
 import java.util.List;
@@ -31,10 +28,12 @@ public class GiveSpawnerCommand implements CommandExecutor, TabCompleter {
             .sorted()
             .collect(Collectors.toUnmodifiableList());
 
-    private final JavaPlugin plugin;
+    private final MobsConfig mobsConfig;
+    private final MessagesConfig messages;
 
-    public GiveSpawnerCommand(JavaPlugin plugin) {
-        this.plugin = plugin;
+    public GiveSpawnerCommand(MobsConfig mobsConfig, MessagesConfig messages) {
+        this.mobsConfig = mobsConfig;
+        this.messages   = messages;
     }
 
     // ── Command ───────────────────────────────────────────────────────────────
@@ -42,60 +41,55 @@ public class GiveSpawnerCommand implements CommandExecutor, TabCompleter {
     @Override
     public boolean onCommand(CommandSender sender, Command command, String label, String[] args) {
         if (!sender.hasPermission(PERM)) {
-            sender.sendMessage(msg("&cYou don't have permission to use this command."));
+            sender.sendMessage(messages.get("no-permission"));
             return true;
         }
         if (args.length < 2) {
-            sender.sendMessage(msg("&cUsage: /givespawner <player> <mobtype> [amount]"));
+            sender.sendMessage(messages.get("usage-givespawner"));
             return true;
         }
 
-        // ── Resolve player ────────────────────────────────────────────────────
         Player target = Bukkit.getPlayerExact(args[0]);
         if (target == null) {
-            sender.sendMessage(msg("&cPlayer not found: &e" + args[0]));
+            sender.sendMessage(messages.get("player-not-found", "player", args[0]));
             return true;
         }
 
-        // ── Resolve EntityType ────────────────────────────────────────────────
         EntityType entityType;
         try {
             entityType = EntityType.valueOf(args[1].toUpperCase());
         } catch (IllegalArgumentException e) {
-            sender.sendMessage(msg("&cUnknown entity type: &e" + args[1]
-                    + "&c. Use tab completion to see valid types."));
+            sender.sendMessage(messages.get("invalid-entity", "type", args[1]));
             return true;
         }
         if (!entityType.isSpawnable() || !entityType.isAlive()) {
-            sender.sendMessage(msg("&e" + entityType.name() + " &ccannot be used in a spawner."));
+            sender.sendMessage(messages.get("entity-not-spawnable", "type", entityType.name()));
             return true;
         }
 
-        // ── Resolve amount ────────────────────────────────────────────────────
         int amount = 1;
         if (args.length >= 3) {
             try {
                 amount = Integer.parseInt(args[2]);
                 if (amount < 1 || amount > 64) throw new NumberFormatException();
             } catch (NumberFormatException e) {
-                sender.sendMessage(msg("&cAmount must be a number between 1 and 64."));
+                sender.sendMessage(messages.get("invalid-amount"));
                 return true;
             }
         }
 
-        // ── Build spawner item (CHEST material, PDC type, lore — no vanilla tooltip) ──
-        ItemStack spawner = SpawnerStackManager.buildSpawnerItem(entityType, 1, plugin);
+        ItemStack spawner = SpawnerStackManager.buildSpawnerItem(entityType, 1, mobsConfig);
         spawner.setAmount(amount);
 
-        // ── Give to player — drop at feet if inventory is full ────────────────
         var leftover = target.getInventory().addItem(spawner);
         if (!leftover.isEmpty()) {
             leftover.values().forEach(stack ->
                     target.getWorld().dropItemNaturally(target.getLocation(), stack));
         }
 
-        target.sendMessage(msg("&aYou received &e" + amount + "x "
-                + formatName(entityType) + " Spawner&a."));
+        target.sendMessage(messages.get("spawner-received",
+                "amount", String.valueOf(amount),
+                "type", formatName(entityType)));
         return true;
     }
 
@@ -144,7 +138,4 @@ public class GiveSpawnerCommand implements CommandExecutor, TabCompleter {
         return sb.toString().trim();
     }
 
-    private static Component msg(String legacy) {
-        return LegacyComponentSerializer.legacyAmpersand().deserialize(legacy);
-    }
 }

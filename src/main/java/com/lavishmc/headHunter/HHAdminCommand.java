@@ -19,7 +19,6 @@ import org.bukkit.plugin.java.JavaPlugin;
 
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
@@ -35,7 +34,10 @@ public class HHAdminCommand implements CommandExecutor, TabCompleter {
             "give", "setlevel", "setxp", "rankup", "reset", "info", "reload"
     );
 
-    /** Vanilla skull materials keyed by mob type string, matching HeadSellListener. */
+    private static final List<String> RELOAD_TARGETS = List.of(
+            "mobs", "spawners", "sidebar", "messages", "all"
+    );
+
     private static final java.util.Map<String, Material> VANILLA_SKULLS = java.util.Map.of(
             "ZOMBIE",           Material.ZOMBIE_HEAD,
             "SKELETON",         Material.SKELETON_SKULL,
@@ -48,22 +50,27 @@ public class HHAdminCommand implements CommandExecutor, TabCompleter {
     private final JavaPlugin plugin;
     private final PlayerDataManager playerData;
     private final Economy economy;
-    private final SpawnRateConfig spawnRateConfig;
+    private final MobsConfig mobsConfig;
+    private final SpawnerConfig spawnerConfig;
+    private final SidebarConfig sidebarConfig;
+    private final MessagesConfig messages;
 
     public HHAdminCommand(JavaPlugin plugin, PlayerDataManager playerData, Economy economy,
-                          SpawnRateConfig spawnRateConfig) {
-        this.plugin          = plugin;
-        this.playerData      = playerData;
-        this.economy         = economy;
-        this.spawnRateConfig = spawnRateConfig;
+                          MobsConfig mobsConfig, SpawnerConfig spawnerConfig,
+                          SidebarConfig sidebarConfig, MessagesConfig messages) {
+        this.plugin        = plugin;
+        this.playerData    = playerData;
+        this.economy       = economy;
+        this.mobsConfig    = mobsConfig;
+        this.spawnerConfig = spawnerConfig;
+        this.sidebarConfig = sidebarConfig;
+        this.messages      = messages;
     }
-
-    // ── Command dispatch ──────────────────────────────────────────────────────
 
     @Override
     public boolean onCommand(CommandSender sender, Command command, String label, String[] args) {
         if (!sender.hasPermission(PERM)) {
-            sender.sendMessage(msg("&cYou don't have permission to use this command."));
+            sender.sendMessage(messages.get("no-permission"));
             return true;
         }
         if (args.length == 0) {
@@ -78,7 +85,7 @@ public class HHAdminCommand implements CommandExecutor, TabCompleter {
             case "rankup"   -> cmdRankUp(sender, args);
             case "reset"    -> cmdReset(sender, args);
             case "info"     -> cmdInfo(sender, args);
-            case "reload"   -> cmdReload(sender);
+            case "reload"   -> cmdReload(sender, args);
             default         -> sendUsage(sender);
         }
         return true;
@@ -86,19 +93,18 @@ public class HHAdminCommand implements CommandExecutor, TabCompleter {
 
     // ── Subcommand handlers ───────────────────────────────────────────────────
 
-    /** /hh give <player> <mob> [amount] */
     private void cmdGive(CommandSender sender, String[] args) {
         if (args.length < 3) {
-            sender.sendMessage(msg("&cUsage: /hh give <player> <mob> [amount]"));
+            sender.sendMessage(messages.get("usage-hh-give"));
             return;
         }
         Player target = resolvePlayer(sender, args[1]);
         if (target == null) return;
 
         String mobType = args[2].toUpperCase();
-        ConfigurationSection section = plugin.getConfig().getConfigurationSection("mobs." + mobType);
+        ConfigurationSection section = mobsConfig.getMobSection(mobType);
         if (section == null) {
-            sender.sendMessage(msg("&cUnknown mob type: &e" + mobType));
+            sender.sendMessage(messages.get("invalid-mob", "mob", mobType));
             return;
         }
 
@@ -108,21 +114,22 @@ public class HHAdminCommand implements CommandExecutor, TabCompleter {
                 amount = Integer.parseInt(args[3]);
                 if (amount < 1 || amount > 64) throw new NumberFormatException();
             } catch (NumberFormatException e) {
-                sender.sendMessage(msg("&cAmount must be a number between 1 and 64."));
+                sender.sendMessage(messages.get("invalid-amount"));
                 return;
             }
         }
 
         ItemStack head = buildHead(mobType, amount);
         target.getInventory().addItem(head);
-        sender.sendMessage(msg("&aGave &e" + amount + "x " + formatMobName(mobType)
-                + " Head &ato &e" + target.getName() + "&a."));
+        sender.sendMessage(messages.get("admin-gave-head",
+                "amount", String.valueOf(amount),
+                "mob", formatMobName(mobType),
+                "player", target.getName()));
     }
 
-    /** /hh setlevel <player> <level> */
     private void cmdSetLevel(CommandSender sender, String[] args) {
         if (args.length < 3) {
-            sender.sendMessage(msg("&cUsage: /hh setlevel <player> <level>"));
+            sender.sendMessage(messages.get("usage-hh-setlevel"));
             return;
         }
         Player target = resolvePlayer(sender, args[1]);
@@ -131,21 +138,21 @@ public class HHAdminCommand implements CommandExecutor, TabCompleter {
         int level;
         try {
             level = Integer.parseInt(args[2]);
-            if (level < 1 || level > PlayerDataManager.MAX_LEVEL) throw new NumberFormatException();
+            if (level < 1 || level > playerData.getMaxLevel()) throw new NumberFormatException();
         } catch (NumberFormatException e) {
-            sender.sendMessage(msg("&cLevel must be between 1 and " + PlayerDataManager.MAX_LEVEL + "."));
+            sender.sendMessage(messages.get("invalid-level", "max", String.valueOf(playerData.getMaxLevel())));
             return;
         }
 
         playerData.setLevel(target.getUniqueId(), level);
-        sender.sendMessage(msg("&aSet &e" + target.getName() + "&a's level to &e" + level + "&a."));
-        target.sendMessage(msg("&aAn admin set your level to &e" + level + "&a."));
+        sender.sendMessage(messages.get("admin-set-level",
+                "player", target.getName(), "level", String.valueOf(level)));
+        target.sendMessage(messages.get("admin-set-level-notify", "level", String.valueOf(level)));
     }
 
-    /** /hh setxp <player> <amount> */
     private void cmdSetXp(CommandSender sender, String[] args) {
         if (args.length < 3) {
-            sender.sendMessage(msg("&cUsage: /hh setxp <player> <amount>"));
+            sender.sendMessage(messages.get("usage-hh-setxp"));
             return;
         }
         Player target = resolvePlayer(sender, args[1]);
@@ -156,19 +163,19 @@ public class HHAdminCommand implements CommandExecutor, TabCompleter {
             amount = Long.parseLong(args[2]);
             if (amount < 0) throw new NumberFormatException();
         } catch (NumberFormatException e) {
-            sender.sendMessage(msg("&cXP amount must be a non-negative number."));
+            sender.sendMessage(messages.get("invalid-xp"));
             return;
         }
 
         playerData.setXP(target.getUniqueId(), amount);
-        sender.sendMessage(msg("&aSet &e" + target.getName() + "&a's XP to &e" + amount + "&a."));
-        target.sendMessage(msg("&aAn admin set your XP to &e" + amount + "&a."));
+        sender.sendMessage(messages.get("admin-set-xp",
+                "player", target.getName(), "amount", String.valueOf(amount)));
+        target.sendMessage(messages.get("admin-set-xp-notify", "amount", String.valueOf(amount)));
     }
 
-    /** /hh rankup <player> — force +1 level, respects MAX_LEVEL cap */
     private void cmdRankUp(CommandSender sender, String[] args) {
         if (args.length < 2) {
-            sender.sendMessage(msg("&cUsage: /hh rankup <player>"));
+            sender.sendMessage(messages.get("usage-hh-rankup"));
             return;
         }
         Player target = resolvePlayer(sender, args[1]);
@@ -176,21 +183,21 @@ public class HHAdminCommand implements CommandExecutor, TabCompleter {
 
         UUID uuid = target.getUniqueId();
         int current = playerData.getLevel(uuid);
-        if (current >= PlayerDataManager.MAX_LEVEL) {
-            sender.sendMessage(msg("&e" + target.getName() + " &cis already at max level."));
+        if (current >= playerData.getMaxLevel()) {
+            sender.sendMessage(messages.get("admin-max-level", "player", target.getName()));
             return;
         }
 
         int next = current + 1;
         playerData.setLevel(uuid, next);
-        sender.sendMessage(msg("&aForced &e" + target.getName() + " &ato level &e" + next + "&a."));
-        target.sendMessage(msg("&a&lRANK UP! &eAn admin promoted you to level " + next + "!"));
+        sender.sendMessage(messages.get("admin-forced-rankup",
+                "player", target.getName(), "level", String.valueOf(next)));
+        target.sendMessage(messages.get("rankup-admin-notify", "level", String.valueOf(next)));
     }
 
-    /** /hh reset <player> — level → 1, XP → 0 */
     private void cmdReset(CommandSender sender, String[] args) {
         if (args.length < 2) {
-            sender.sendMessage(msg("&cUsage: /hh reset <player>"));
+            sender.sendMessage(messages.get("usage-hh-reset"));
             return;
         }
         Player target = resolvePlayer(sender, args[1]);
@@ -199,14 +206,13 @@ public class HHAdminCommand implements CommandExecutor, TabCompleter {
         UUID uuid = target.getUniqueId();
         playerData.setLevel(uuid, 1);
         playerData.setXP(uuid, 0);
-        sender.sendMessage(msg("&aReset &e" + target.getName() + "&a's level and XP to defaults."));
-        target.sendMessage(msg("&cAn admin reset your level and XP."));
+        sender.sendMessage(messages.get("admin-reset", "player", target.getName()));
+        target.sendMessage(messages.get("admin-reset-notify"));
     }
 
-    /** /hh info <player> */
     private void cmdInfo(CommandSender sender, String[] args) {
         if (args.length < 2) {
-            sender.sendMessage(msg("&cUsage: /hh info <player>"));
+            sender.sendMessage(messages.get("usage-hh-info"));
             return;
         }
         Player target = resolvePlayer(sender, args[1]);
@@ -216,24 +222,17 @@ public class HHAdminCommand implements CommandExecutor, TabCompleter {
         int  level = playerData.getLevel(uuid);
         long xp    = playerData.getXP(uuid);
 
-        String xpNeeded;
-        if (level >= PlayerDataManager.MAX_LEVEL) {
-            xpNeeded = "MAX LEVEL";
-        } else {
-            long threshold = playerData.xpToReachLevel(level + 1);
-            xpNeeded = (threshold - xp) + " XP needed for level " + (level + 1);
-        }
+        String xpNeeded = level >= playerData.getMaxLevel()
+                ? "MAX LEVEL"
+                : (playerData.xpToReachLevel(level + 1) - xp) + " XP needed for level " + (level + 1);
 
         String balance = economy != null
                 ? "$" + String.format("%.2f", economy.getBalance(target))
                 : "N/A (Vault unavailable)";
 
-        String costStr;
-        if (level >= PlayerDataManager.MAX_LEVEL) {
-            costStr = "MAX LEVEL";
-        } else {
-            costStr = "$" + playerData.getRankupCost(level);
-        }
+        String costStr = level >= playerData.getMaxLevel()
+                ? "MAX LEVEL"
+                : "$" + playerData.getRankupCost(level);
 
         sender.sendMessage(msg("&e--- " + target.getName() + " ---"));
         sender.sendMessage(msg("&7Level: &f" + level));
@@ -243,11 +242,40 @@ public class HHAdminCommand implements CommandExecutor, TabCompleter {
         sender.sendMessage(msg("&7Balance: &f" + balance));
     }
 
-    /** /hh reload */
-    private void cmdReload(CommandSender sender) {
-        plugin.reloadConfig();
-        if (spawnRateConfig != null) spawnRateConfig.reload();
-        sender.sendMessage(msg("&aHeadHunter config reloaded."));
+    private void cmdReload(CommandSender sender, String[] args) {
+        String target = args.length >= 2 ? args[1].toLowerCase() : "all";
+
+        boolean reloadedMobs     = false;
+        boolean reloadedSpawners = false;
+        boolean reloadedSidebar  = false;
+        boolean reloadedMessages = false;
+
+        switch (target) {
+            case "mobs"     -> { mobsConfig.reload();     reloadedMobs     = true; }
+            case "spawners" -> { spawnerConfig.reload();  reloadedSpawners = true; }
+            case "sidebar"  -> { sidebarConfig.reload();  reloadedSidebar  = true; }
+            case "messages" -> { messages.reload();       reloadedMessages = true; }
+            default         -> {
+                plugin.reloadConfig();
+                mobsConfig.reload();
+                spawnerConfig.reload();
+                sidebarConfig.reload();
+                messages.reload();
+                reloadedMobs = reloadedSpawners = reloadedSidebar = reloadedMessages = true;
+            }
+        }
+
+        String reloaded = buildReloadedStr(reloadedMobs, reloadedSpawners, reloadedSidebar, reloadedMessages);
+        sender.sendMessage(messages.get("admin-reloaded", "target", reloaded));
+    }
+
+    private static String buildReloadedStr(boolean mobs, boolean spawners, boolean sidebar, boolean msgs) {
+        List<String> parts = new ArrayList<>();
+        if (mobs)     parts.add("mobs");
+        if (spawners) parts.add("spawners");
+        if (sidebar)  parts.add("sidebar");
+        if (msgs)     parts.add("messages");
+        return String.join(", ", parts);
     }
 
     // ── Tab completion ────────────────────────────────────────────────────────
@@ -257,13 +285,12 @@ public class HHAdminCommand implements CommandExecutor, TabCompleter {
                                       String label, String[] args) {
         if (!sender.hasPermission(PERM)) return List.of();
 
-        if (args.length == 1) {
-            return filter(SUBCOMMANDS, args[0]);
-        }
+        if (args.length == 1) return filter(SUBCOMMANDS, args[0]);
 
         String sub = args[0].toLowerCase();
 
-        if (args.length == 2 && !sub.equals("reload")) {
+        if (args.length == 2) {
+            if (sub.equals("reload")) return filter(RELOAD_TARGETS, args[1]);
             return filter(onlinePlayerNames(), args[1]);
         }
 
@@ -285,16 +312,13 @@ public class HHAdminCommand implements CommandExecutor, TabCompleter {
 
     // ── Helpers ───────────────────────────────────────────────────────────────
 
-    /** Builds a mob head ItemStack with correct texture via the DropHeads API. */
     private ItemStack buildHead(String mobType, int amount) {
         Material mat = VANILLA_SKULLS.getOrDefault(mobType, Material.PLAYER_HEAD);
 
-        // For non-PLAYER_HEAD vanilla skulls, a plain ItemStack already has the right texture.
         if (mat != Material.PLAYER_HEAD) {
             return new ItemStack(mat, amount);
         }
 
-        // Use the DropHeads API to get a correctly textured head.
         try {
             EntityType entityType = EntityType.valueOf(mobType);
             ItemStack item = DropHeads.getPlugin().getAPI().getHead(entityType, mobType);
@@ -304,7 +328,6 @@ public class HHAdminCommand implements CommandExecutor, TabCompleter {
             }
         } catch (Exception ignored) {}
 
-        // Fallback: plain PLAYER_HEAD with display name for HeadSellListener matching.
         ItemStack item = new ItemStack(Material.PLAYER_HEAD, amount);
         ItemMeta meta = item.getItemMeta();
         if (meta != null) {
@@ -317,9 +340,7 @@ public class HHAdminCommand implements CommandExecutor, TabCompleter {
 
     private Player resolvePlayer(CommandSender sender, String name) {
         Player target = Bukkit.getPlayerExact(name);
-        if (target == null) {
-            sender.sendMessage(msg("&cPlayer not found: &e" + name));
-        }
+        if (target == null) sender.sendMessage(messages.get("player-not-found", "player", name));
         return target;
     }
 
@@ -330,14 +351,14 @@ public class HHAdminCommand implements CommandExecutor, TabCompleter {
     }
 
     private List<String> mobKeys() {
-        ConfigurationSection section = plugin.getConfig().getConfigurationSection("mobs");
+        ConfigurationSection section = mobsConfig.getMobsSection();
         if (section == null) return List.of();
         return new ArrayList<>(section.getKeys(false));
     }
 
-    private static List<String> levelSuggestions() {
+    private List<String> levelSuggestions() {
         List<String> levels = new ArrayList<>();
-        for (int i = 1; i <= PlayerDataManager.MAX_LEVEL; i++) levels.add(String.valueOf(i));
+        for (int i = 1; i <= playerData.getMaxLevel(); i++) levels.add(String.valueOf(i));
         return levels;
     }
 
@@ -366,12 +387,12 @@ public class HHAdminCommand implements CommandExecutor, TabCompleter {
     }
 
     private static void sendUsage(CommandSender sender) {
-        sender.sendMessage(msg("&e/hh give <player> <mob> [amount]"));
-        sender.sendMessage(msg("&e/hh setlevel <player> <level>"));
-        sender.sendMessage(msg("&e/hh setxp <player> <amount>"));
-        sender.sendMessage(msg("&e/hh rankup <player>"));
-        sender.sendMessage(msg("&e/hh reset <player>"));
-        sender.sendMessage(msg("&e/hh info <player>"));
-        sender.sendMessage(msg("&e/hh reload"));
+        sender.sendMessage(msg("&b/hh give <player> <mob> [amount]"));
+        sender.sendMessage(msg("&b/hh setlevel <player> <level>"));
+        sender.sendMessage(msg("&b/hh setxp <player> <amount>"));
+        sender.sendMessage(msg("&b/hh rankup <player>"));
+        sender.sendMessage(msg("&b/hh reset <player>"));
+        sender.sendMessage(msg("&b/hh info <player>"));
+        sender.sendMessage(msg("&b/hh reload [mobs|spawners|sidebar|messages|all]"));
     }
 }

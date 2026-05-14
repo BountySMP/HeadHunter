@@ -59,6 +59,7 @@ public class PlayerHeadListener implements Listener {
 
     private final JavaPlugin plugin;
     private final Economy economy;
+    private final MessagesConfig messages;
 
     /** Maps player UUID → death timestamp (ms). Cleared when restriction expires. */
     private final HashMap<UUID, Long> deathRestrictions = new HashMap<>();
@@ -73,9 +74,10 @@ public class PlayerHeadListener implements Listener {
     /** Maps locKey → TextDisplay UUID for placed trophy head labels. */
     private final Map<String, UUID> placedHeadLabels = new HashMap<>();
 
-    public PlayerHeadListener(JavaPlugin plugin, Economy economy) {
-        this.plugin = plugin;
-        this.economy = economy;
+    public PlayerHeadListener(JavaPlugin plugin, Economy economy, MessagesConfig messages) {
+        this.plugin    = plugin;
+        this.economy   = economy;
+        this.messages  = messages;
 
         // Every 5 seconds: refresh trophy head labels with live bounty data and
         // clean up any entries whose block was removed without a break event.
@@ -100,10 +102,10 @@ public class PlayerHeadListener implements Listener {
 
     @EventHandler(priority = EventPriority.NORMAL, ignoreCancelled = false)
     public void onPlayerDeath(PlayerDeathEvent event) {
-        if (!plugin.getConfig().getBoolean("player-heads.enabled", true)) return;
+        if (!messages.isPlayerHeadsEnabled()) return;
 
         Player deadPlayer = event.getEntity();
-        boolean pvpOnly = plugin.getConfig().getBoolean("player-heads.drop-on-pvp-only", false);
+        boolean pvpOnly = messages.isDropOnPvpOnly();
         if (pvpOnly && deadPlayer.getKiller() == null) return;
 
         // Record death time for economy command restriction.
@@ -112,7 +114,7 @@ public class PlayerHeadListener implements Listener {
         if (economy == null) return;
 
         // Calculate payout: configurable % of balance, minimum 0.
-        int percent = plugin.getConfig().getInt("player-heads.balance-percent", 25);
+        int percent = messages.getBalancePercent();
         double balance = economy.getBalance(deadPlayer);
         long payout = (long) Math.max(0, Math.floor(balance * percent / 100.0));
 
@@ -209,7 +211,7 @@ public class PlayerHeadListener implements Listener {
         meta.setPlayerProfile(profile);
 
         String victimName = victim.getName() != null ? victim.getName() : ownerUUID.toString();
-        int percent = plugin.getConfig().getInt("player-heads.balance-percent", 25);
+        int percent = messages.getBalancePercent();
 
         Component displayName = Component.empty()
                 .decoration(TextDecoration.ITALIC, false)
@@ -281,12 +283,12 @@ public class PlayerHeadListener implements Listener {
         }
 
         if (ownerUUID.equals(seller.getUniqueId())) {
-            seller.sendMessage(msg("&cYou cannot sell your own head!"));
+            seller.sendMessage(messages.get("head-sell-own"));
             return;
         }
 
         if (economy == null) {
-            seller.sendMessage(msg("&cEconomy is unavailable."));
+            seller.sendMessage(messages.get("head-economy-unavailable"));
             return;
         }
 
@@ -312,11 +314,14 @@ public class PlayerHeadListener implements Listener {
             seller.getInventory().setItemInMainHand(null);
         }
 
-        seller.sendMessage(msg("&aYou sold &e" + victimName + "'s &ahead for &e$" + actualWithdraw + "&a!"));
+        seller.sendMessage(messages.get("head-sold",
+                "player", victimName,
+                "amount", String.valueOf(actualWithdraw)));
 
         Player onlineVictim = Bukkit.getPlayer(ownerUUID);
         if (onlineVictim != null) {
-            onlineVictim.sendMessage(msg("&cYour head was sold! You lost &e$" + actualWithdraw + "&c!"));
+            onlineVictim.sendMessage(messages.get("head-victim-sold",
+                    "amount", String.valueOf(actualWithdraw)));
         }
     }
 
@@ -332,8 +337,7 @@ public class PlayerHeadListener implements Listener {
         Long deathTime = deathRestrictions.get(uuid);
         if (deathTime == null) return;
 
-        int restrictionSeconds = plugin.getConfig()
-                .getInt("player-heads.death-restriction-seconds", 60);
+        int restrictionSeconds = messages.getDeathRestrictionSeconds();
         long elapsed = System.currentTimeMillis() - deathTime;
         long restrictionMs = restrictionSeconds * 1000L;
 
@@ -351,8 +355,8 @@ public class PlayerHeadListener implements Listener {
         long remainingMs = restrictionMs - elapsed;
         long remainingSeconds = (remainingMs + 999) / 1000; // round up
 
-        player.sendMessage(msg("&cYou cannot use economy commands for &e"
-                + remainingSeconds + " seconds &cafter death!"));
+        player.sendMessage(messages.get("death-restriction",
+                "seconds", String.valueOf(remainingSeconds)));
     }
 
     // -------------------------------------------------------------------------
@@ -396,8 +400,8 @@ public class PlayerHeadListener implements Listener {
         }
 
         String text = bounty > 0
-                ? "§e§l" + name + "'s Head §r§7| §a§l$" + bounty + " Bounty"
-                : "§e§l" + name + "'s Head §r§7| §f§l$" + balanceSnapshot + " (25%)";
+                ? "§b§l" + name + "'s Head §r§7| §a§l$" + bounty + " Bounty"
+                : "§b§l" + name + "'s Head §r§7| §f§l$" + balanceSnapshot + " (25%)";
 
         display.text(LegacyComponentSerializer.legacySection().deserialize(text));
     }
@@ -440,7 +444,4 @@ public class PlayerHeadListener implements Listener {
         }
     }
 
-    private static Component msg(String legacy) {
-        return LegacyComponentSerializer.legacyAmpersand().deserialize(legacy);
-    }
 }

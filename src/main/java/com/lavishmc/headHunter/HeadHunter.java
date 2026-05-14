@@ -20,35 +20,28 @@ import java.util.stream.StreamSupport;
  *
  * Extends DropHeads (which extends EvPlugin → JavaPlugin) so that all existing
  * DropHeads lifecycle hooks, static accessors, and API references continue to
- * work without modification. Bukkit instantiates this class; the EvPlugin base
- * class calls onEvEnable() / onEvDisable() from its own onEnable() / onDisable(),
- * which are inherited from DropHeads.
+ * work without modification.
  */
 public final class HeadHunter extends DropHeads {
 
     private static PlayerDataManager playerDataManager;
     private SpawnerStackManager spawnerStackManager;
 
-    /** Returns the shared {@link PlayerDataManager} instance (available after onEnable). */
     public static PlayerDataManager getPlayerDataManager() {
         return playerDataManager;
     }
 
     @Override
     public void onEvDisable() {
-        if (spawnerStackManager != null) {
-            spawnerStackManager.shutdown();
-        }
+        if (spawnerStackManager != null) spawnerStackManager.shutdown();
         super.onEvDisable();
     }
 
     @Override
     public void onEvEnable() {
-        // Initialise all base DropHeads functionality first.
         super.onEvEnable();
         getLogger().info("HeadHunter economy system loaded - HeadSellListener registered");
 
-        // Resolve Vault economy (soft dependency — null if unavailable).
         Economy economy = null;
         if (getServer().getPluginManager().getPlugin("Vault") != null) {
             RegisteredServiceProvider<Economy> rsp =
@@ -59,24 +52,30 @@ public final class HeadHunter extends DropHeads {
             getLogger().warning("Vault not found or no economy plugin loaded — head selling disabled.");
         }
 
-        playerDataManager = new PlayerDataManager(this);
+        // ── Config objects ────────────────────────────────────────────────────
+        MobsConfig     mobsConfig     = new MobsConfig(this);
+        SpawnerConfig  spawnerConfig  = new SpawnerConfig(this);
+        SidebarConfig  sidebarConfig  = new SidebarConfig(this);
+        MessagesConfig messagesConfig = new MessagesConfig(this);
 
-        SpawnRateConfig spawnRateConfig = new SpawnRateConfig(this);
+        playerDataManager = new PlayerDataManager(this, mobsConfig);
 
-        // Register HeadHunter-specific systems.
-        getServer().getPluginManager().registerEvents(new PlayerHeadListener(this, economy), this);
+        // ── Register listeners ────────────────────────────────────────────────
+        getServer().getPluginManager().registerEvents(
+                new PlayerHeadListener(this, economy, messagesConfig), this);
         getServer().getPluginManager().registerEvents(new MobStackManager(this), this);
-        getServer().getPluginManager().registerEvents(new BankNoteDropListener(this), this);
-        getServer().getPluginManager().registerEvents(new HeadLoreListener(this), this);
-        getServer().getPluginManager().registerEvents(new HeadSellListener(this, economy, playerDataManager), this);
+        getServer().getPluginManager().registerEvents(
+                new HeadLoreListener(mobsConfig), this);
+        getServer().getPluginManager().registerEvents(
+                new HeadSellListener(this, economy, playerDataManager,
+                        mobsConfig, messagesConfig, sidebarConfig), this);
         getServer().getPluginManager().registerEvents(new SunlightProtectionListener(), this);
-        spawnerStackManager = new SpawnerStackManager(this, spawnRateConfig);
+        spawnerStackManager = new SpawnerStackManager(this, spawnerConfig);
         getServer().getPluginManager().registerEvents(spawnerStackManager, this);
 
-        // Start the sidebar scoreboard (updates every second).
-        new SidebarManager(this, playerDataManager, economy).start();
+        new SidebarManager(this, playerDataManager, economy, sidebarConfig).start();
 
-        // /hhdebug — prints item-in-hand diagnostics to help verify head detection.
+        // /hhdebug
         CommandExecutor hhDebug = (sender, command, label, args) -> {
             if (!(sender instanceof Player player)) {
                 sender.sendMessage("This command can only be run by a player.");
@@ -92,10 +91,9 @@ public final class HeadHunter extends DropHeads {
                             Objects.requireNonNull(meta.displayName()))
                     : "(none)";
 
-            ConfigurationSection mobsSection = getConfig().getConfigurationSection("mobs");
+            ConfigurationSection mobsSection = mobsConfig.getMobsSection();
             String mobKeys = mobsSection == null ? "(none)"
-                    : mobsSection.getKeys(false).stream()
-                            .collect(Collectors.joining(", "));
+                    : mobsSection.getKeys(false).stream().collect(Collectors.joining(", "));
 
             player.sendMessage(ChatColor.GOLD + "--- HHDebug ---");
             player.sendMessage(ChatColor.YELLOW + "Material: " + ChatColor.WHITE + item.getType());
@@ -106,31 +104,28 @@ public final class HeadHunter extends DropHeads {
         };
         Objects.requireNonNull(getCommand("hhdebug")).setExecutor(hhDebug);
 
-        // /givespawner — give a configured spawner item to a player.
-        GiveSpawnerCommand giveSpawner = new GiveSpawnerCommand(this);
+        // /givespawner
+        GiveSpawnerCommand giveSpawner = new GiveSpawnerCommand(mobsConfig, messagesConfig);
         Objects.requireNonNull(getCommand("givespawner")).setExecutor(giveSpawner);
         Objects.requireNonNull(getCommand("givespawner")).setTabCompleter(giveSpawner);
 
-        // /giveplayerhead — give a tagged player head item to the command sender.
-        GivePlayerHeadCommand givePlayerHead = new GivePlayerHeadCommand(this);
+        // /giveplayerhead
+        GivePlayerHeadCommand givePlayerHead = new GivePlayerHeadCommand(messagesConfig);
         Objects.requireNonNull(getCommand("giveplayerhead")).setExecutor(givePlayerHead);
         Objects.requireNonNull(getCommand("giveplayerhead")).setTabCompleter(givePlayerHead);
 
-        // /givebanknote — give a bank note of the specified tier to a player.
-        GiveBankNoteCommand giveBankNote = new GiveBankNoteCommand(this);
-        Objects.requireNonNull(getCommand("givebanknote")).setExecutor(giveBankNote);
-        Objects.requireNonNull(getCommand("givebanknote")).setTabCompleter(giveBankNote);
-
-        // /hh — admin command suite.
-        HHAdminCommand hhAdmin = new HHAdminCommand(this, playerDataManager, economy, spawnRateConfig);
+        // /hh
+        HHAdminCommand hhAdmin = new HHAdminCommand(this, playerDataManager, economy,
+                mobsConfig, spawnerConfig, sidebarConfig, messagesConfig);
         Objects.requireNonNull(getCommand("hh")).setExecutor(hhAdmin);
         Objects.requireNonNull(getCommand("hh")).setTabCompleter(hhAdmin);
 
-        // /rankup — spend money + XP gate to advance stored rank level.
-        RankUpCommand rankUpCommand = new RankUpCommand(this, playerDataManager, economy);
+        // /rankup
+        RankUpCommand rankUpCommand = new RankUpCommand(
+                this, playerDataManager, economy, messagesConfig, sidebarConfig);
         Objects.requireNonNull(getCommand("rankup")).setExecutor(rankUpCommand);
 
-        // /testlevelup — preview rank-up effects without changing level (op-only).
+        // /testlevelup
         Objects.requireNonNull(getCommand("testlevelup")).setExecutor((sender, cmd, label, args) -> {
             if (!(sender instanceof Player player)) {
                 sender.sendMessage("This command can only be run by a player.");
@@ -140,7 +135,7 @@ public final class HeadHunter extends DropHeads {
             return true;
         });
 
-        // /hhtest — full item diagnostics: material, display name, meta class, all PDC keys.
+        // /hhtest
         CommandExecutor hhTest = (sender, command, label, args) -> {
             if (!(sender instanceof Player player)) {
                 sender.sendMessage("This command can only be run by a player.");

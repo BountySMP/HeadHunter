@@ -340,7 +340,7 @@ public class MobStackManager implements Listener {
             entity.setCustomName(null);
             entity.setCustomNameVisible(false);
         } else {
-            entity.setCustomName("§e§l" + formatMobName(type) + " §f§lx§6§l" + size);
+            entity.setCustomName("§b§l" + formatMobName(type) + " §f§lx§6§l" + size);
             entity.setCustomNameVisible(true);
         }
     }

@@ -1,0 +1,83 @@
+# ============================================================
+# HeadHunter — messages.yml
+# All player-facing strings and player-head economy settings.
+# Reload with: /hh reload messages
+# Supports & color codes. Use {placeholder} for dynamic values.
+# ============================================================
+
+player-heads:
+  enabled: true
+  # Percentage of dead player's balance stored as bounty on their head
+  balance-percent: 25
+  # Seconds after death during which economy commands (/pay, /sell, etc.) are blocked
+  death-restriction-seconds: 60
+  # true = head only drops when killed by another player; false = always drops on death
+  drop-on-pvp-only: false
+
+messages:
+  # ── Head selling ────────────────────────────────────────────
+  sell-success:       "&c&l(!) &aYou sold &b{count} {mob} Head(s) &afor &b${money} &aand &b{xp} XP"
+  sell-level-too-low: "&c&l(!) &cYou must be level &b{level} &cto sell this head!"
+  sell-no-level:      "&c&l(!) &b{mob} Head &fis not defined by level. Cannot sell!"
+  # Placeholders: {level}, {percent}, {xp}
+  sell-xp-bar:        "§b§lLevel {level} §8| §b{percent}% §8| §a+{xp} XP"
+
+  # ── Rank-up ─────────────────────────────────────────────────
+  rankup-max-level:     "&c&l(!) &cYou are already at the maximum level!"
+  rankup-xp-missing:    "&c&l(!) &cYou don't have enough XP to rank up! &b{current}/{required} XP"
+  rankup-money-missing: "&c&l(!) &fYou need &b${amount} &fmore to rankup to &bLevel {level}&f!"
+  rankup-success:       "&c&l(!) &a&lRANK UP! &bYou are now level {level}!"
+  rankup-tier-unlock:   "&c&l(!) &b&lTier {tier} unlocked!"
+  rankup-broadcast:     "§6§l[!] §b{player} §6has reached §b§lTier {tier}§6! §7\uD83C\uDF89"
+  rankup-title-top:     "§6§lRANK UP!"
+  rankup-title-sub:     "§bYou are now Level {level}!"
+  rankup-bar:           "§a§lRANK UP! §bLevel {level}"
+  rankup-bar-tier:      " §8| §bTier {tier} unlocked!"
+  rankup-admin-notify:  "&c&l(!) &a&lRANK UP! &bAn admin promoted you to level {level}!"
+
+  # ── Player head trading ──────────────────────────────────────
+  head-sell-own:             "&c&l(!) &cYou cannot sell your own head!"
+  head-economy-unavailable:  "&c&l(!) &cEconomy is unavailable."
+  head-sold:                 "&c&l(!) &aYou sold &b{player}'s &ahead for &b${amount}&a!"
+  head-victim-sold:          "&c&l(!) &cYour head was sold! You lost &b${amount}&c!"
+  death-restriction:         "&c&l(!) &cYou cannot use economy commands for &b{seconds} seconds &cafter death!"
+
+  # ── Spawner messages ─────────────────────────────────────────
+  spawner-max-stack: "&c&l(!) &cThis spawner is already at the maximum stack size of &b{max}&c."
+  spawner-merged:    "&c&l(!) &aMerged &b1 &aspawner. Stack is now &b{count}/{max}&a."
+  spawner-received:  "&c&l(!) &aYou received &b{amount}x {type} Spawner&a."
+
+  # ── Give commands ────────────────────────────────────────────
+  head-given: "&c&l(!) &aGave &b{amount}x {head} &ato &b{player}&a."
+
+  # ── Admin commands ───────────────────────────────────────────
+  admin-gave-head:        "&c&l(!) &aGave &b{amount}x {mob} Head &ato &b{player}&a."
+  admin-set-level:        "&c&l(!) &aSet &b{player}&a's level to &b{level}&a."
+  admin-set-level-notify: "&c&l(!) &aAn admin set your level to &b{level}&a."
+  admin-set-xp:           "&c&l(!) &aSet &b{player}&a's XP to &b{amount}&a."
+  admin-set-xp-notify:    "&c&l(!) &aAn admin set your XP to &b{amount}&a."
+  admin-forced-rankup:    "&c&l(!) &aForced &b{player} &ato level &b{level}&a."
+  admin-max-level:        "&c&l(!) &b{player} &cis already at max level."
+  admin-reset:            "&c&l(!) &aReset &b{player}&a's level and XP to defaults."
+  admin-reset-notify:     "&c&l(!) &cAn admin reset your level and XP."
+  admin-reloaded:         "&c&l(!) &aReloaded: &b{target}&a."
+
+  # ── Common errors ────────────────────────────────────────────
+  no-permission:        "&c&l(!) &cYou don't have permission to use this command."
+  player-not-found:     "&c&l(!) &cPlayer not found: &b{player}"
+  invalid-amount:       "&c&l(!) &cAmount must be a number between 1 and 64."
+  invalid-mob:          "&c&l(!) &cUnknown mob type: &b{mob}"
+  invalid-level:        "&c&l(!) &cLevel must be between 1 and {max}."
+  invalid-xp:           "&c&l(!) &cXP amount must be a non-negative number."
+  invalid-entity:       "&c&l(!) &cUnknown entity type: &b{type}. Use tab completion to see valid types."
+  entity-not-spawnable: "&c&l(!) &b{type} &ccannot be used in a spawner."
+  console-only:         "This command can only be run by a player."
+
+  usage-givespawner:    "&c&l(!) &cUsage: /givespawner <player> <mobtype> [amount]"
+  usage-giveplayerhead: "&c&l(!) &cUsage: /giveplayerhead <player> [amount]"
+  usage-hh-give:        "&c&l(!) &cUsage: /hh give <player> <mob> [amount]"
+  usage-hh-setlevel:    "&c&l(!) &cUsage: /hh setlevel <player> <level>"
+  usage-hh-setxp:       "&c&l(!) &cUsage: /hh setxp <player> <amount>"
+  usage-hh-rankup:      "&c&l(!) &cUsage: /hh rankup <player>"
+  usage-hh-reset:       "&c&l(!) &cUsage: /hh reset <player>"
+  usage-hh-info:        "&c&l(!) &cUsage: /hh info <player>"

@@ -1,6 +1,7 @@
 package com.lavishmc.headHunter;
 
 import com.destroystokyo.paper.profile.PlayerProfile;
+import com.destroystokyo.paper.profile.PlayerProfile;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.format.NamedTextColor;
 import net.kyori.adventure.text.format.TextDecoration;
@@ -17,7 +18,6 @@ import org.bukkit.entity.Player;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.inventory.meta.SkullMeta;
 import org.bukkit.persistence.PersistentDataType;
-import org.bukkit.plugin.java.JavaPlugin;
 
 import java.util.List;
 import java.util.stream.Collectors;
@@ -39,10 +39,10 @@ public class GivePlayerHeadCommand implements CommandExecutor, TabCompleter {
     private static final NamespacedKey HEAD_BALANCE_KEY =
             new NamespacedKey("headhunter", "player_head_balance");
 
-    private final JavaPlugin plugin;
+    private final MessagesConfig messages;
 
-    public GivePlayerHeadCommand(JavaPlugin plugin) {
-        this.plugin = plugin;
+    public GivePlayerHeadCommand(MessagesConfig messages) {
+        this.messages = messages;
     }
 
     // ── Command ───────────────────────────────────────────────────────────────
@@ -50,39 +50,37 @@ public class GivePlayerHeadCommand implements CommandExecutor, TabCompleter {
     @Override
     public boolean onCommand(CommandSender sender, Command command, String label, String[] args) {
         if (!sender.hasPermission(PERM)) {
-            sender.sendMessage(msg("&cYou don't have permission to use this command."));
+            sender.sendMessage(messages.get("no-permission"));
             return true;
         }
         if (!(sender instanceof Player senderPlayer)) {
-            sender.sendMessage("This command can only be run by a player.");
+            sender.sendMessage(messages.getRaw("console-only"));
             return true;
         }
         if (args.length < 1) {
-            sender.sendMessage(msg("&cUsage: /giveplayerhead <player> [amount]"));
+            sender.sendMessage(messages.get("usage-giveplayerhead"));
             return true;
         }
 
-        // ── Resolve target ────────────────────────────────────────────────────
         String targetName = args[0];
         OfflinePlayer target = Bukkit.getPlayerExact(targetName);
         if (target == null) {
-            @SuppressWarnings("deprecation") // name lookup — no UUID available
+            @SuppressWarnings("deprecation")
             OfflinePlayer offline = Bukkit.getOfflinePlayer(targetName);
             if (!offline.hasPlayedBefore()) {
-                sender.sendMessage(msg("&cPlayer not found: &e" + targetName));
+                sender.sendMessage(messages.get("player-not-found", "player", targetName));
                 return true;
             }
             target = offline;
         }
 
-        // ── Resolve amount ────────────────────────────────────────────────────
         int amount = 1;
         if (args.length >= 2) {
             try {
                 amount = Integer.parseInt(args[1]);
                 if (amount < 1 || amount > 64) throw new NumberFormatException();
             } catch (NumberFormatException e) {
-                sender.sendMessage(msg("&cAmount must be a number between 1 and 64."));
+                sender.sendMessage(messages.get("invalid-amount"));
                 return true;
             }
         }
@@ -124,8 +122,10 @@ public class GivePlayerHeadCommand implements CommandExecutor, TabCompleter {
                     senderPlayer.getWorld().dropItemNaturally(senderPlayer.getLocation(), stack));
         }
 
-        sender.sendMessage(msg("&aGave &e" + amount + "x " + victimName + "'s Head &ato &e"
-                + senderPlayer.getName() + "&a."));
+        sender.sendMessage(messages.get("head-given",
+                "amount", String.valueOf(amount),
+                "head", victimName + "'s Head",
+                "player", senderPlayer.getName()));
         return true;
     }
 
@@ -153,7 +153,4 @@ public class GivePlayerHeadCommand implements CommandExecutor, TabCompleter {
 
     // ── Helpers ───────────────────────────────────────────────────────────────
 
-    private static Component msg(String legacy) {
-        return LegacyComponentSerializer.legacyAmpersand().deserialize(legacy);
-    }
 }

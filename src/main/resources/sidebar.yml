@@ -1,0 +1,31 @@
+# ============================================================
+# HeadHunter — sidebar.yml
+# Scoreboard sidebar layout and display colors.
+# Reload with: /hh reload sidebar
+# ============================================================
+
+# BossBar colors per progression tier (1-5)
+# Valid values: GREEN, YELLOW, WHITE, RED, PURPLE, BLUE, PINK
+tier-colors:
+  1: GREEN
+  2: YELLOW
+  3: WHITE
+  4: RED
+  5: PURPLE
+
+# Sidebar line formats.
+# Supports legacy § color codes.
+# Available placeholders per line:
+#   {player}      — player's in-game name
+#   {balance}     — formatted balance (e.g. 1.2k, 5m)
+#   {level}       — player's current rank level
+#   {xp-percent}  — integer % progress toward next level
+#   {datetime}    — current date/time string
+lines:
+  datetime:  "§7{datetime}"
+  separator: "§r "
+  player:    "§b§l{player}"
+  balance:   "§d§l* §5§lBalance: §f§l${balance}"
+  level:     "§d§l* §5§lLevel: §f§l{level}"
+  xp:        "§d§l* §5§l{xp-percent}% to next level"
+  xp-maxed:  "§d§l* §5§lMAX LEVEL"
