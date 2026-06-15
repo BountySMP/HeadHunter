@@ -2,6 +2,7 @@ package com.lavishmc.headHunter;
 
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.serializer.legacy.LegacyComponentSerializer;
+import org.bukkit.ChatColor;
 import org.bukkit.configuration.file.YamlConfiguration;
 import org.bukkit.plugin.java.JavaPlugin;
 
@@ -35,16 +36,16 @@ public class MessagesConfig {
 
     /** Returns a message Component with {placeholder} pairs replaced. Pairs: key, value, key, value... */
     public Component get(String key, String... replacements) {
-        return LegacyComponentSerializer.legacyAmpersand().deserialize(getRaw(key, replacements));
+        return LegacyComponentSerializer.legacySection().deserialize(getRaw(key, replacements));
     }
 
-    /** Returns the raw string (with & codes) for a message key, with replacements applied. */
+    /** Returns the translated string (with § codes) for a message key, with replacements applied. */
     public String getRaw(String key, String... replacements) {
         String val = config.getString("messages." + key, "&c[HH] Missing message: " + key);
         for (int i = 0; i + 1 < replacements.length; i += 2) {
             val = val.replace("{" + replacements[i] + "}", replacements[i + 1]);
         }
-        return val;
+        return ChatColor.translateAlternateColorCodes('&', val);
     }
 
     // ── Player-head config ────────────────────────────────────────────────────
@@ -54,7 +55,7 @@ public class MessagesConfig {
     }
 
     public int getBalancePercent() {
-        return config.getInt("player-heads.balance-percent", 25);
+        return Math.max(0, Math.min(100, config.getInt("player-heads.balance-percent", 25)));
     }
 
     public int getDeathRestrictionSeconds() {

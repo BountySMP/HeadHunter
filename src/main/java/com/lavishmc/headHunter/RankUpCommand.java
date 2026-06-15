@@ -10,11 +10,15 @@ import org.bukkit.command.Command;
 import org.bukkit.command.CommandExecutor;
 import org.bukkit.command.CommandSender;
 import org.bukkit.entity.Player;
+import org.bukkit.event.EventHandler;
+import org.bukkit.event.EventPriority;
+import org.bukkit.event.Listener;
+import org.bukkit.event.player.PlayerQuitEvent;
 import org.bukkit.plugin.java.JavaPlugin;
 
 import java.time.Duration;
-import java.util.HashMap;
 import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * Handles the /rankup (alias /levelup) command.
@@ -26,14 +30,14 @@ import java.util.UUID;
  * </ol>
  * On success, money is deducted and the stored level is incremented by 1.</p>
  */
-public class RankUpCommand implements CommandExecutor {
+public class RankUpCommand implements CommandExecutor, Listener {
 
     private final JavaPlugin plugin;
     private final PlayerDataManager playerData;
     private final Economy economy;
     private final MessagesConfig messages;
     private final SidebarConfig sidebarConfig;
-    private final HashMap<UUID, BossBar> activeBossBars = new HashMap<>();
+    private final ConcurrentHashMap<UUID, BossBar> activeBossBars = new ConcurrentHashMap<>();
 
     public RankUpCommand(JavaPlugin plugin, PlayerDataManager playerData, Economy economy,
                          MessagesConfig messages, SidebarConfig sidebarConfig) {
@@ -168,11 +172,17 @@ public class RankUpCommand implements CommandExecutor {
         player.showBossBar(bar);
 
         plugin.getServer().getScheduler().runTaskLater(plugin, () -> {
-            if (activeBossBars.get(uuid) == bar) {
-                player.hideBossBar(bar);
-                activeBossBars.remove(uuid);
+            if (activeBossBars.remove(uuid, bar)) {
+                Player online = plugin.getServer().getPlayer(uuid);
+                if (online != null) online.hideBossBar(bar);
             }
         }, 60L);
+    }
+
+    @EventHandler(priority = EventPriority.MONITOR)
+    public void onPlayerQuit(PlayerQuitEvent event) {
+        BossBar bar = activeBossBars.remove(event.getPlayer().getUniqueId());
+        if (bar != null) event.getPlayer().hideBossBar(bar);
     }
 
     public void runTestEffects(Player player) {

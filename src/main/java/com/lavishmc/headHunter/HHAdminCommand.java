@@ -31,7 +31,7 @@ public class HHAdminCommand implements CommandExecutor, TabCompleter {
     private static final String PERM = "headhunter.admin";
 
     private static final List<String> SUBCOMMANDS = List.of(
-            "give", "setlevel", "setxp", "rankup", "reset", "info", "reload"
+            "give", "setlevel", "setxp", "rankup", "reset", "info", "reload", "testlevelup"
     );
 
     private static final List<String> RELOAD_TARGETS = List.of(
@@ -54,17 +54,20 @@ public class HHAdminCommand implements CommandExecutor, TabCompleter {
     private final SpawnerConfig spawnerConfig;
     private final SidebarConfig sidebarConfig;
     private final MessagesConfig messages;
+    private final RankUpCommand rankUpCommand;
 
     public HHAdminCommand(JavaPlugin plugin, PlayerDataManager playerData, Economy economy,
                           MobsConfig mobsConfig, SpawnerConfig spawnerConfig,
-                          SidebarConfig sidebarConfig, MessagesConfig messages) {
-        this.plugin        = plugin;
-        this.playerData    = playerData;
-        this.economy       = economy;
-        this.mobsConfig    = mobsConfig;
-        this.spawnerConfig = spawnerConfig;
-        this.sidebarConfig = sidebarConfig;
-        this.messages      = messages;
+                          SidebarConfig sidebarConfig, MessagesConfig messages,
+                          RankUpCommand rankUpCommand) {
+        this.plugin          = plugin;
+        this.playerData      = playerData;
+        this.economy         = economy;
+        this.mobsConfig      = mobsConfig;
+        this.spawnerConfig   = spawnerConfig;
+        this.sidebarConfig   = sidebarConfig;
+        this.messages        = messages;
+        this.rankUpCommand   = rankUpCommand;
     }
 
     @Override
@@ -85,8 +88,9 @@ public class HHAdminCommand implements CommandExecutor, TabCompleter {
             case "rankup"   -> cmdRankUp(sender, args);
             case "reset"    -> cmdReset(sender, args);
             case "info"     -> cmdInfo(sender, args);
-            case "reload"   -> cmdReload(sender, args);
-            default         -> sendUsage(sender);
+            case "reload"       -> cmdReload(sender, args);
+            case "testlevelup"  -> cmdTestLevelUp(sender);
+            default             -> sendUsage(sender);
         }
         return true;
     }
@@ -145,6 +149,7 @@ public class HHAdminCommand implements CommandExecutor, TabCompleter {
         }
 
         playerData.setLevel(target.getUniqueId(), level);
+        plugin.getLogger().info("[HH-Audit] " + sender.getName() + " set " + target.getName() + "'s level to " + level);
         sender.sendMessage(messages.get("admin-set-level",
                 "player", target.getName(), "level", String.valueOf(level)));
         target.sendMessage(messages.get("admin-set-level-notify", "level", String.valueOf(level)));
@@ -168,6 +173,7 @@ public class HHAdminCommand implements CommandExecutor, TabCompleter {
         }
 
         playerData.setXP(target.getUniqueId(), amount);
+        plugin.getLogger().info("[HH-Audit] " + sender.getName() + " set " + target.getName() + "'s XP to " + amount);
         sender.sendMessage(messages.get("admin-set-xp",
                 "player", target.getName(), "amount", String.valueOf(amount)));
         target.sendMessage(messages.get("admin-set-xp-notify", "amount", String.valueOf(amount)));
@@ -190,6 +196,7 @@ public class HHAdminCommand implements CommandExecutor, TabCompleter {
 
         int next = current + 1;
         playerData.setLevel(uuid, next);
+        plugin.getLogger().info("[HH-Audit] " + sender.getName() + " force-ranked up " + target.getName() + " to level " + next);
         sender.sendMessage(messages.get("admin-forced-rankup",
                 "player", target.getName(), "level", String.valueOf(next)));
         target.sendMessage(messages.get("rankup-admin-notify", "level", String.valueOf(next)));
@@ -206,6 +213,7 @@ public class HHAdminCommand implements CommandExecutor, TabCompleter {
         UUID uuid = target.getUniqueId();
         playerData.setLevel(uuid, 1);
         playerData.setXP(uuid, 0);
+        plugin.getLogger().info("[HH-Audit] " + sender.getName() + " reset " + target.getName() + "'s HeadHunter data");
         sender.sendMessage(messages.get("admin-reset", "player", target.getName()));
         target.sendMessage(messages.get("admin-reset-notify"));
     }
@@ -240,6 +248,14 @@ public class HHAdminCommand implements CommandExecutor, TabCompleter {
         sender.sendMessage(msg("&7Progress: &f" + xpNeeded));
         sender.sendMessage(msg("&7Rankup Cost: &f" + costStr));
         sender.sendMessage(msg("&7Balance: &f" + balance));
+    }
+
+    private void cmdTestLevelUp(CommandSender sender) {
+        if (!(sender instanceof Player player)) {
+            sender.sendMessage(messages.getRaw("console-only"));
+            return;
+        }
+        rankUpCommand.runTestEffects(player);
     }
 
     private void cmdReload(CommandSender sender, String[] args) {
@@ -394,5 +410,6 @@ public class HHAdminCommand implements CommandExecutor, TabCompleter {
         sender.sendMessage(msg("&b/hh reset <player>"));
         sender.sendMessage(msg("&b/hh info <player>"));
         sender.sendMessage(msg("&b/hh reload [mobs|spawners|sidebar|messages|all]"));
+        sender.sendMessage(msg("&b/hh testlevelup"));
     }
 }

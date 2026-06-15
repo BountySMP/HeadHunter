@@ -8,6 +8,11 @@ import java.io.File;
 import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
 
 public class MobsConfig {
 
@@ -16,6 +21,10 @@ public class MobsConfig {
 
     private final JavaPlugin plugin;
     private YamlConfiguration config;
+
+    // Cached and sorted once per reload so getMobType() doesn't rebuild on every right-click.
+    private List<String>        cachedSortedKeys    = new ArrayList<>();
+    private Map<String, String> cachedFormattedNames = new HashMap<>();
 
     public MobsConfig(JavaPlugin plugin) {
         this.plugin = plugin;
@@ -31,10 +40,11 @@ public class MobsConfig {
             config.setDefaults(YamlConfiguration.loadConfiguration(
                     new InputStreamReader(bundled, StandardCharsets.UTF_8)));
         }
+        buildMobKeyCache();
     }
 
     public long getXpPerHead() {
-        return config.getLong("xp-per-head", 1L);
+        return Math.max(0L, config.getLong("xp-per-head", 1L));
     }
 
     public long xpToReachLevel(int n) {
@@ -65,6 +75,42 @@ public class MobsConfig {
 
     public ConfigurationSection getMobsSection() {
         return config.getConfigurationSection("mobs");
+    }
+
+    /** Mob keys sorted by formatted-name length descending — for longest-match display-name lookup. */
+    public List<String> getSortedMobKeys() {
+        return cachedSortedKeys;
+    }
+
+    /** Formatted display name for a mob key (e.g. "WITHER_SKELETON" → "Wither Skeleton"). */
+    public String getFormattedMobName(String key) {
+        return cachedFormattedNames.getOrDefault(key, formatMobName(key));
+    }
+
+    private void buildMobKeyCache() {
+        ConfigurationSection mobs = config.getConfigurationSection("mobs");
+        if (mobs == null) {
+            cachedSortedKeys     = new ArrayList<>();
+            cachedFormattedNames = new HashMap<>();
+            return;
+        }
+        Map<String, String> names = new HashMap<>();
+        List<String> keys = new ArrayList<>(mobs.getKeys(false));
+        for (String key : keys) names.put(key, formatMobName(key));
+        keys.sort((a, b) -> names.get(b).length() - names.get(a).length());
+        cachedSortedKeys     = Collections.unmodifiableList(keys);
+        cachedFormattedNames = Collections.unmodifiableMap(names);
+    }
+
+    private static String formatMobName(String typeName) {
+        String[] words = typeName.toLowerCase().split("_");
+        StringBuilder sb = new StringBuilder();
+        for (String word : words) {
+            if (!word.isEmpty()) {
+                sb.append(Character.toUpperCase(word.charAt(0))).append(word.substring(1)).append(' ');
+            }
+        }
+        return sb.toString().trim();
     }
 
     private void saveDefault() {

@@ -33,6 +33,7 @@ public final class HeadHunter extends DropHeads {
 
     @Override
     public void onEvDisable() {
+        if (playerDataManager != null) playerDataManager.flush();
         if (spawnerStackManager != null) spawnerStackManager.shutdown();
         super.onEvDisable();
     }
@@ -114,15 +115,16 @@ public final class HeadHunter extends DropHeads {
         Objects.requireNonNull(getCommand("giveplayerhead")).setExecutor(givePlayerHead);
         Objects.requireNonNull(getCommand("giveplayerhead")).setTabCompleter(givePlayerHead);
 
-        // /hh
-        HHAdminCommand hhAdmin = new HHAdminCommand(this, playerDataManager, economy,
-                mobsConfig, spawnerConfig, sidebarConfig, messagesConfig);
-        Objects.requireNonNull(getCommand("hh")).setExecutor(hhAdmin);
-        Objects.requireNonNull(getCommand("hh")).setTabCompleter(hhAdmin);
-
         // /rankup
         RankUpCommand rankUpCommand = new RankUpCommand(
                 this, playerDataManager, economy, messagesConfig, sidebarConfig);
+        getServer().getPluginManager().registerEvents(rankUpCommand, this);
+
+        // /hh
+        HHAdminCommand hhAdmin = new HHAdminCommand(this, playerDataManager, economy,
+                mobsConfig, spawnerConfig, sidebarConfig, messagesConfig, rankUpCommand);
+        Objects.requireNonNull(getCommand("hh")).setExecutor(hhAdmin);
+        Objects.requireNonNull(getCommand("hh")).setTabCompleter(hhAdmin);
         Objects.requireNonNull(getCommand("rankup")).setExecutor(rankUpCommand);
 
         // /testlevelup

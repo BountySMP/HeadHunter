@@ -12,6 +12,7 @@ import org.bukkit.event.entity.CreatureSpawnEvent;
 import org.bukkit.entity.Player;
 import org.bukkit.event.entity.EntityDeathEvent;
 import org.bukkit.event.entity.EntityPickupItemEvent;
+import org.bukkit.event.world.ChunkUnloadEvent;
 import org.bukkit.inventory.meta.ItemMeta;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.persistence.PersistentDataContainer;
@@ -234,6 +235,10 @@ public class MobStackManager implements Listener {
         LivingEntity dead = event.getEntity();
         int size = getStackSize(dead);
 
+        // Clear floating name immediately so it doesn't linger during death animation.
+        dead.setCustomName(null);
+        dead.setCustomNameVisible(false);
+
         // Always remove the stack entry on death so the next spawn starts fresh.
         ChunkKey key = chunkKey(dead);
         Map<EntityType, UUID> chunkMap = stacks.get(key);
@@ -269,17 +274,27 @@ public class MobStackManager implements Listener {
                 // Vanilla drops (beef, bones, XP bottles, etc.): multiply the existing
                 // amount by stack size, then split into 64-item stacks.
                 int originalAmount = drop.getAmount();
-                int total = originalAmount * size;
-                drop.setAmount(Math.min(total, 64));
-                int remaining = total - 64;
+                long total = (long) originalAmount * size;
+                drop.setAmount((int) Math.min(total, 64));
+                long remaining = total - 64;
                 while (remaining > 0) {
                     ItemStack overflow = drop.clone();
-                    overflow.setAmount(Math.min(remaining, 64));
+                    overflow.setAmount((int) Math.min(remaining, 64));
                     event.getDrops().add(overflow);
                     remaining -= 64;
                 }
             }
         }
+    }
+
+    // -------------------------------------------------------------------------
+    // Chunk unload listener — evict stale map entries for unloaded chunks
+    // -------------------------------------------------------------------------
+
+    @EventHandler(priority = EventPriority.MONITOR)
+    public void onChunkUnload(ChunkUnloadEvent event) {
+        stacks.remove(new ChunkKey(event.getWorld().getName(),
+                event.getChunk().getX(), event.getChunk().getZ()));
     }
 
     // -------------------------------------------------------------------------

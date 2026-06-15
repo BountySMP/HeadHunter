@@ -10,7 +10,10 @@
       "Bash(jar tf:*)",
       "Bash(./gradlew shadowJar)",
       "Bash(javap:*)",
-      "Bash(./gradlew build:*)"
+      "Bash(./gradlew build:*)",
+      "WebFetch(domain:repo.papermc.io)",
+      "mcp__ide__getDiagnostics",
+      "WebFetch(domain:jd.papermc.io)"
     ]
   }
 }

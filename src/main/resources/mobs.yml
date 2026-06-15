@@ -205,7 +205,7 @@ mobs:
     level: 22
     cost_to_rankup: 11000
     custom_drop:
-  PIGLIN_BRUTE:
+  ZOMBIE_HORSE:
     drop_chance: 1.0
     sell_price: 400
     tier: 5
@@ -497,7 +497,7 @@ mobs:
     tier: 0
     level: 0
     custom_drop:
-  ZOMBIE_HORSE:
+  PIGLIN_BRUTE:
     drop_chance: 1.0
     sell_price: 0
     tier: 0

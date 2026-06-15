@@ -28,12 +28,12 @@ messages:
   rankup-money-missing: "&c&l(!) &fYou need &b${amount} &fmore to rankup to &bLevel {level}&f!"
   rankup-success:       "&c&l(!) &a&lRANK UP! &bYou are now level {level}!"
   rankup-tier-unlock:   "&c&l(!) &b&lTier {tier} unlocked!"
-  rankup-broadcast:     "§6§l[!] §b{player} §6has reached §b§lTier {tier}§6! §7\uD83C\uDF89"
+  rankup-broadcast:     "§c§l(!) §b{player} §6has reached §b§lTier {tier}§6! §7\uD83C\uDF89"
   rankup-title-top:     "§6§lRANK UP!"
   rankup-title-sub:     "§bYou are now Level {level}!"
   rankup-bar:           "§a§lRANK UP! §bLevel {level}"
   rankup-bar-tier:      " §8| §bTier {tier} unlocked!"
-  rankup-admin-notify:  "&c&l(!) &a&lRANK UP! &bAn admin promoted you to level {level}!"
+  rankup-admin-notify:  "&c&l(!) &a&lRANK UP! &bAn Admin promoted you to level {level}!"
 
   # ── Player head trading ──────────────────────────────────────
   head-sell-own:             "&c&l(!) &cYou cannot sell your own head!"

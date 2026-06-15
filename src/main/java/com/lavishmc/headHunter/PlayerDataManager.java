@@ -7,6 +7,8 @@ import java.io.*;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
  * Stores per-player XP and rank level (1–25).
@@ -28,8 +30,13 @@ public class PlayerDataManager {
     private final JavaPlugin plugin;
     private final MobsConfig mobsConfig;
     private final File dataFile;
-    private final HashMap<UUID, Long>    playerXP    = new HashMap<>();
-    private final HashMap<UUID, Integer> playerLevel = new HashMap<>();
+
+    // ConcurrentHashMap so async save reads and main-thread writes don't race.
+    private final ConcurrentHashMap<UUID, Long>    playerXP    = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<UUID, Integer> playerLevel = new ConcurrentHashMap<>();
+
+    // Guards against queuing multiple redundant async saves when data changes rapidly.
+    private final AtomicBoolean savePending = new AtomicBoolean(false);
 
     public PlayerDataManager(JavaPlugin plugin, MobsConfig mobsConfig) {
         this.plugin     = plugin;
@@ -134,7 +141,22 @@ public class PlayerDataManager {
         }
     }
 
+    /** Debounced async save — coalesces rapid successive calls into a single write. */
     private void save() {
+        if (savePending.compareAndSet(false, true)) {
+            plugin.getServer().getScheduler().runTaskAsynchronously(plugin, () -> {
+                savePending.set(false);
+                doSave();
+            });
+        }
+    }
+
+    /** Synchronous save — call from plugin disable so in-flight data is not lost. */
+    public void flush() {
+        doSave();
+    }
+
+    private synchronized void doSave() {
         plugin.getDataFolder().mkdirs();
         DataStore store = new DataStore();
         for (Map.Entry<UUID, Long>    e : playerXP.entrySet())    store.xp.put(e.getKey().toString(), e.getValue());

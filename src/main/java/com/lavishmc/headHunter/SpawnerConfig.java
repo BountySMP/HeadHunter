@@ -34,7 +34,7 @@ public class SpawnerConfig {
     }
 
     public int getStackMax() {
-        return config.getInt("stack-max", 50);
+        return Math.max(1, Math.min(10_000, config.getInt("stack-max", 50)));
     }
 
     public double getSpawnRate(String mobType) {

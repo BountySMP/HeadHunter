@@ -13,16 +13,15 @@ import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
 import org.bukkit.event.block.Action;
 import org.bukkit.event.player.PlayerInteractEvent;
+import org.bukkit.event.player.PlayerQuitEvent;
 import org.bukkit.inventory.EquipmentSlot;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.inventory.meta.ItemMeta;
 import org.bukkit.plugin.java.JavaPlugin;
 
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.List;
 import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * Handles right-click head selling.
@@ -48,7 +47,7 @@ public class HeadSellListener implements Listener {
     private final MobsConfig mobsConfig;
     private final MessagesConfig messages;
     private final SidebarConfig sidebarConfig;
-    private final HashMap<UUID, BossBar> activeBossBars = new HashMap<>();
+    private final ConcurrentHashMap<UUID, BossBar> activeBossBars = new ConcurrentHashMap<>();
 
     public HeadSellListener(JavaPlugin plugin, Economy economy, PlayerDataManager playerData,
                             MobsConfig mobsConfig, MessagesConfig messages, SidebarConfig sidebarConfig) {
@@ -107,12 +106,14 @@ public class HeadSellListener implements Listener {
         long totalMoney = sellPrice * count;
         long totalXP = (mobLevel == playerLevel) ? xpPerHead * count : 0;
 
+        // Remove item before depositing so a crash/disconnect mid-transaction
+        // cannot result in money being paid without consuming the head.
+        player.getInventory().setItemInMainHand(null);
+
         if (economy != null) economy.depositPlayer(player, (double) totalMoney);
 
         long xpBefore = playerData.getXP(player.getUniqueId());
         if (totalXP > 0) playerData.addXP(player.getUniqueId(), totalXP);
-
-        player.getInventory().setItemInMainHand(null);
 
         player.sendMessage(messages.get("sell-success",
                 "count", String.valueOf(count),
@@ -202,11 +203,17 @@ public class HeadSellListener implements Listener {
         player.showBossBar(bar);
 
         plugin.getServer().getScheduler().runTaskLater(plugin, () -> {
-            if (activeBossBars.get(uuid) == bar) {
-                player.hideBossBar(bar);
-                activeBossBars.remove(uuid);
+            if (activeBossBars.remove(uuid, bar)) {
+                Player online = plugin.getServer().getPlayer(uuid);
+                if (online != null) online.hideBossBar(bar);
             }
         }, 60L);
+    }
+
+    @EventHandler(priority = EventPriority.MONITOR)
+    public void onPlayerQuit(PlayerQuitEvent event) {
+        BossBar bar = activeBossBars.remove(event.getPlayer().getUniqueId());
+        if (bar != null) event.getPlayer().hideBossBar(bar);
     }
 
     private static boolean isMobHead(ItemStack item) {
@@ -226,15 +233,8 @@ public class HeadSellListener implements Listener {
         ItemMeta meta = item.getItemMeta();
         if (meta != null && meta.hasDisplayName()) {
             String displayName = PlainTextComponentSerializer.plainText().serialize(meta.displayName());
-            ConfigurationSection mobsSection = mobsConfig.getMobsSection();
-            if (mobsSection != null) {
-                List<String> sortedKeys = new ArrayList<>(mobsSection.getKeys(false));
-                HashMap<String, String> formattedNames = new HashMap<>();
-                for (String key : sortedKeys) formattedNames.put(key, formatMobName(key));
-                sortedKeys.sort((a, b) -> formattedNames.get(b).length() - formattedNames.get(a).length());
-                for (String mobKey : sortedKeys) {
-                    if (displayName.contains(formattedNames.get(mobKey))) return mobKey;
-                }
+            for (String mobKey : mobsConfig.getSortedMobKeys()) {
+                if (displayName.contains(mobsConfig.getFormattedMobName(mobKey))) return mobKey;
             }
         }
 

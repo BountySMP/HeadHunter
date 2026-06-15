@@ -27,6 +27,7 @@ import org.bukkit.event.block.BlockPlaceEvent;
 import org.bukkit.event.entity.PlayerDeathEvent;
 import org.bukkit.event.player.PlayerCommandPreprocessEvent;
 import org.bukkit.event.player.PlayerInteractEvent;
+import org.bukkit.event.player.PlayerQuitEvent;
 import org.bukkit.inventory.EquipmentSlot;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.inventory.meta.ItemMeta;
@@ -323,6 +324,17 @@ public class PlayerHeadListener implements Listener {
             onlineVictim.sendMessage(messages.get("head-victim-sold",
                     "amount", String.valueOf(actualWithdraw)));
         }
+    }
+
+    // -------------------------------------------------------------------------
+    // Cleanup on quit
+    // -------------------------------------------------------------------------
+
+    @EventHandler(priority = EventPriority.MONITOR)
+    public void onPlayerQuit(PlayerQuitEvent event) {
+        UUID uuid = event.getPlayer().getUniqueId();
+        deathRestrictions.remove(uuid);
+        lastSellTime.remove(uuid);
     }
 
     // -------------------------------------------------------------------------

@@ -4,6 +4,7 @@ import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.format.NamedTextColor;
 import net.kyori.adventure.text.format.TextDecoration;
 import net.kyori.adventure.text.serializer.legacy.LegacyComponentSerializer;
+import net.kyori.adventure.text.serializer.plain.PlainTextComponentSerializer;
 import org.bukkit.*;
 import org.bukkit.block.Block;
 import org.bukkit.block.CreatureSpawner;
@@ -61,6 +62,11 @@ public class SpawnerStackManager implements Listener {
     //noinspection deprecation
     private static final NamespacedKey MOB_STACK_KEY =
             new NamespacedKey("headhunter", "stack_size");
+
+    /** PDC key stamped on every TextDisplay we own — used to sweep them on startup. */
+    //noinspection deprecation
+    private static final NamespacedKey LABEL_KEY =
+            new NamespacedKey("headhunter", "spawner_label");
 
     private final JavaPlugin plugin;
     private final SpawnerConfig spawnerConfig;
@@ -207,6 +213,12 @@ public class SpawnerStackManager implements Listener {
         BukkitTask task = tasks.remove(locKey);
         if (task != null) task.cancel();
         removeLabel(locKey);
+        // Fallback: physically remove any TextDisplay at the label position in case
+        // it wasn't tracked in the labels map (e.g. server restarted mid-load).
+        Location labelLoc = block.getLocation().clone().add(0.5, 1.5, 0.5);
+        for (org.bukkit.entity.Entity nearby : block.getWorld().getNearbyEntities(labelLoc, 0.5, 0.5, 0.5)) {
+            if (nearby instanceof TextDisplay) nearby.remove();
+        }
         stackCounts.remove(locKey);
         stackTypes.remove(locKey);
         save();
@@ -442,16 +454,29 @@ public class SpawnerStackManager implements Listener {
         // Defer TextDisplay spawning and task registration by 40 ticks (2 s) so the
         // world is fully loaded before spawning entities.
         plugin.getServer().getScheduler().runTaskLater(plugin, () -> {
-            for (Entry e : valid) {
-                // Remove any persisted TextDisplay entities left over from a previous
-                // session near this spawner to prevent duplicate labels stacking up.
-                Location labelLoc = e.loc().clone().add(0.5, 1.5, 0.5);
-                for (org.bukkit.entity.Entity nearby : e.loc().getWorld()
-                        .getNearbyEntities(labelLoc, 0.5, 0.5, 0.5)) {
-                    if (nearby instanceof TextDisplay) {
-                        nearby.remove();
+            // Sweep every loaded chunk in every world and remove all TextDisplay
+            // entities that are ours — both tagged (new) and untagged legacy ones
+            // identified by text pattern — so no stale labels survive a reboot.
+            for (World world : plugin.getServer().getWorlds()) {
+                for (org.bukkit.Chunk chunk : world.getLoadedChunks()) {
+                    for (org.bukkit.entity.Entity entity : chunk.getEntities()) {
+                        if (!(entity instanceof TextDisplay td)) continue;
+                        if (td.getPersistentDataContainer().has(LABEL_KEY, PersistentDataType.BYTE)) {
+                            entity.remove();
+                            continue;
+                        }
+                        // Legacy labels (created before LABEL_KEY existed) are identified
+                        // by their text containing " Spawner x".
+                        Component txt = td.text();
+                        if (txt != null) {
+                            String plain = PlainTextComponentSerializer.plainText().serialize(txt);
+                            if (plain.contains(" Spawner x")) entity.remove();
+                        }
                     }
                 }
+            }
+            // Recreate labels only for tracked spawners.
+            for (Entry e : valid) {
                 updateLabel(e.loc(), e.type(), e.count());
                 restartTask(e.loc(), e.type(), e.count());
             }
@@ -475,7 +500,8 @@ public class SpawnerStackManager implements Listener {
         TextDisplay display = (TextDisplay) loc.getWorld().spawnEntity(labelLoc, EntityType.TEXT_DISPLAY);
         display.text(component);
         display.setBillboard(org.bukkit.entity.Display.Billboard.CENTER);
-        display.setPersistent(true);
+        display.setPersistent(false);
+        display.getPersistentDataContainer().set(LABEL_KEY, PersistentDataType.BYTE, (byte) 1);
         labels.put(locKey, display.getUniqueId());
     }
 

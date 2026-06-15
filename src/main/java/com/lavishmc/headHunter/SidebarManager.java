@@ -8,18 +8,22 @@ import org.bukkit.scoreboard.RenderType;
 import org.bukkit.scoreboard.Scoreboard;
 import org.bukkit.scoreboard.ScoreboardManager;
 import org.bukkit.entity.Player;
+import org.bukkit.event.EventHandler;
+import org.bukkit.event.Listener;
+import org.bukkit.event.player.PlayerQuitEvent;
 import org.bukkit.plugin.java.JavaPlugin;
 
-import java.text.SimpleDateFormat;
-import java.util.Date;
+import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
 import java.util.HashMap;
+import java.util.Locale;
 import java.util.Map;
 import java.util.UUID;
 
-public class SidebarManager {
+public class SidebarManager implements Listener {
 
-    private static final SimpleDateFormat DATE_FORMAT =
-            new SimpleDateFormat("MMM dd yyyy h:mm a");
+    private static final DateTimeFormatter DATE_FORMAT =
+            DateTimeFormatter.ofPattern("MMM dd yyyy h:mm a", Locale.US);
 
     private final JavaPlugin plugin;
     private final PlayerDataManager playerData;
@@ -40,11 +44,19 @@ public class SidebarManager {
     }
 
     public void start() {
+        plugin.getServer().getPluginManager().registerEvents(this, plugin);
         plugin.getServer().getScheduler().runTaskTimer(plugin, this::updateAll, 20L, 20L);
     }
 
+    @EventHandler
+    public void onPlayerQuit(PlayerQuitEvent event) {
+        UUID uuid = event.getPlayer().getUniqueId();
+        boards.remove(uuid);
+        prevLines.remove(uuid);
+    }
+
     private void updateAll() {
-        String dateTime = DATE_FORMAT.format(new Date());
+        String dateTime = DATE_FORMAT.format(LocalDateTime.now());
         for (Player player : Bukkit.getOnlinePlayers()) {
             updatePlayer(player, dateTime);
         }

@@ -1,6 +1,7 @@
 package com.lavishmc.headHunter;
 
 import net.kyori.adventure.bossbar.BossBar;
+import org.bukkit.ChatColor;
 import org.bukkit.configuration.file.YamlConfiguration;
 import org.bukkit.plugin.java.JavaPlugin;
 
@@ -38,7 +39,7 @@ public class SidebarConfig {
         for (int i = 0; i + 1 < replacements.length; i += 2) {
             val = val.replace("{" + replacements[i] + "}", replacements[i + 1]);
         }
-        return val;
+        return ChatColor.translateAlternateColorCodes('&', val);
     }
 
     public BossBar.Color getTierBossBarColor(int tier) {
