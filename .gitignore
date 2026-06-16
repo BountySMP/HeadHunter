@@ -50,6 +50,7 @@ hs_err_pid*
 
 # General
 .DS_Store
+.claude/
 .AppleDouble
 .LSOverride
 
