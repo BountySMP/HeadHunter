@@ -3,6 +3,7 @@ package com.lavishmc.headHunter;
 import org.bukkit.Location;
 import org.bukkit.Material;
 import org.bukkit.NamespacedKey;
+import org.bukkit.World;
 import org.bukkit.block.Block;
 import org.bukkit.block.CreatureSpawner;
 import org.bukkit.entity.Entity;
@@ -42,6 +43,7 @@ public class MobStackManager implements Listener {
     // -------------------------------------------------------------------------
 
     private static final int MAX_STACK = 9999;
+    private SpawnerStackManager spawnerStackManager;
 
     /**
      * Spawn reasons that are always allowed regardless of the natural-spawning
@@ -91,6 +93,7 @@ public class MobStackManager implements Listener {
 
     public MobStackManager(JavaPlugin plugin, MobsConfig mobsConfig) {
         this.mobsConfig = mobsConfig;
+        this.spawnerStackManager = null; // Set later via setSpawnerStackManager
         // Hardcode the "headhunter" namespace so the key is always
         // "headhunter:stack_size" regardless of the registered plugin name.
         //noinspection deprecation  — intentional fixed namespace
@@ -124,6 +127,13 @@ public class MobStackManager implements Listener {
     public int getStackSize(Entity entity) {
         return entity.getPersistentDataContainer()
                 .getOrDefault(stackKey, PersistentDataType.INTEGER, 1);
+    }
+
+    /**
+     * Set the SpawnerStackManager reference so we can accumulate drops.
+     */
+    public void setSpawnerStackManager(SpawnerStackManager manager) {
+        this.spawnerStackManager = manager;
     }
 
     // -------------------------------------------------------------------------
@@ -256,16 +266,47 @@ public class MobStackManager implements Listener {
         }
 
         // For any mob from our stacked spawner, suppress vanilla XP entirely.
-        // XP mode: clear ALL drops and only spawn XP orbs; ECO mode: keep drops/heads, no XP.
-        String spawnerMode = getSpawnerMode(dead);
-        if (spawnerMode != null) {
+        // XP mode: clear ALL drops and accumulate XP; ECO mode: accumulate drops, no drops on ground.
+        String spawnerLocKey = getSpawnerLocKey(dead);
+        if (spawnerLocKey != null && spawnerStackManager != null) {
             event.setDroppedExp(0);
+            String spawnerMode = getSpawnerModeFromKey(spawnerLocKey, dead.getWorld());
+
             if ("XP".equals(spawnerMode)) {
+                // XP mode: accumulate XP, clear all drops
                 event.getDrops().clear();
                 int xpPerMob = mobsConfig != null ? mobsConfig.getXpModeOrbs(dead.getType().name()) : 5;
-                dead.getWorld().spawn(dead.getLocation(), org.bukkit.entity.ExperienceOrb.class,
-                        orb -> orb.setExperience(xpPerMob * size));
+                spawnerStackManager.accumulateXP(spawnerLocKey, (long) xpPerMob * size);
                 return; // Exit early — no item multiplication needed in XP mode
+            } else {
+                // ECO mode: accumulate drops in virtual storage, clear physical drops
+                // First multiply drops by stack size
+                if (size > 1) {
+                    List<ItemStack> originalDrops = new ArrayList<>(event.getDrops());
+                    event.getDrops().clear();
+                    for (ItemStack drop : originalDrops) {
+                        if (drop == null) continue;
+                        if (SKULL_MATERIALS.contains(drop.getType())) {
+                            // Heads: one per mob in stack
+                            drop.setAmount(Math.min(size, 64));
+                            event.getDrops().add(drop);
+                        } else {
+                            // Regular drops: multiply amount
+                            int originalAmount = drop.getAmount();
+                            long total = (long) originalAmount * size;
+                            while (total > 0) {
+                                ItemStack overflow = drop.clone();
+                                overflow.setAmount((int) Math.min(total, 64));
+                                event.getDrops().add(overflow);
+                                total -= 64;
+                            }
+                        }
+                    }
+                }
+                // Now accumulate all drops and clear the physical drops
+                spawnerStackManager.accumulateDrops(spawnerLocKey, new ArrayList<>(event.getDrops()));
+                event.getDrops().clear();
+                return; // Exit early — drops are stored, not dropped
             }
         }
 
@@ -402,27 +443,32 @@ public class MobStackManager implements Listener {
     }
 
     /**
-     * Returns the spawner mode ("ECO" or "XP") for a mob that came from our stacked
-     * spawner system, or null if the entity has no spawner-loc tag (natural spawn).
+     * Returns the spawner location key for a mob that came from our stacked spawner,
+     * or null if the entity has no spawner-loc tag (natural spawn).
      */
-    private static String getSpawnerMode(LivingEntity entity) {
-        String locStr = entity.getPersistentDataContainer()
+    private static String getSpawnerLocKey(LivingEntity entity) {
+        return entity.getPersistentDataContainer()
                 .get(SpawnerStackManager.SPAWNER_LOC_KEY, PersistentDataType.STRING);
-        if (locStr == null) return null;
-        String[] parts = locStr.split(",", 4);
-        if (parts.length != 4) return null;
+    }
+
+    /**
+     * Returns the spawner mode ("ECO" or "XP") from a location key.
+     */
+    private static String getSpawnerModeFromKey(String locKey, World world) {
+        String[] parts = locKey.split(",", 4);
+        if (parts.length != 4) return "ECO";
         try {
             int bx = Integer.parseInt(parts[1]);
             int by = Integer.parseInt(parts[2]);
             int bz = Integer.parseInt(parts[3]);
-            Block block = entity.getWorld().getBlockAt(bx, by, bz);
+            Block block = world.getBlockAt(bx, by, bz);
             if (block.getType() != Material.SPAWNER) return "ECO";
             if (!(block.getState() instanceof CreatureSpawner cs)) return "ECO";
             String mode = cs.getPersistentDataContainer()
                     .get(SpawnerStackManager.SPAWNER_MODE_KEY, PersistentDataType.STRING);
             return "XP".equals(mode) ? "XP" : "ECO";
         } catch (NumberFormatException e) {
-            return null;
+            return "ECO";
         }
     }
 }

@@ -91,6 +91,10 @@ public class SpawnerStackManager implements Listener {
     private final Map<String, EntityType> stackTypes = new HashMap<>();
     /** Location string → UUID of the floating TextDisplay label. */
     private final Map<String, UUID> labels = new HashMap<>();
+    /** Location string → (Material → amount) accumulated drops in ECO mode. */
+    private final Map<String, Map<Material, Long>> accumulatedDrops = new HashMap<>();
+    /** Location string → accumulated XP in XP mode. */
+    private final Map<String, Long> accumulatedXP = new HashMap<>();
 
     public SpawnerStackManager(JavaPlugin plugin, SpawnerConfig spawnerConfig, MobsConfig mobsConfig) {
         this.plugin         = plugin;
@@ -98,6 +102,127 @@ public class SpawnerStackManager implements Listener {
         this.mobsConfig     = mobsConfig;
         this.maxStack       = spawnerConfig.getStackMax();
         load();
+    }
+
+    // -------------------------------------------------------------------------
+    // Virtual Storage API
+    // -------------------------------------------------------------------------
+
+    public Map<Material, Long> getAccumulatedDrops(String locKey) {
+        return accumulatedDrops.getOrDefault(locKey, new HashMap<>());
+    }
+
+    public long getAccumulatedXP(String locKey) {
+        return accumulatedXP.getOrDefault(locKey, 0L);
+    }
+
+    public EntityType getSpawnerType(String locKey) {
+        return stackTypes.get(locKey);
+    }
+
+    public int getStackCount(String locKey) {
+        return stackCounts.getOrDefault(locKey, 1);
+    }
+
+    public static String locKey(Location loc) {
+        return loc.getWorld().getName() + "," + loc.getBlockX() + "," + loc.getBlockY() + "," + loc.getBlockZ();
+    }
+
+    public static String getBlockMode(Block block) {
+        if (!(block.getState() instanceof CreatureSpawner cs)) return "ECO";
+        String mode = cs.getPersistentDataContainer().get(SPAWNER_MODE_KEY, PersistentDataType.STRING);
+        return "XP".equals(mode) ? "XP" : "ECO";
+    }
+
+    public void collectXP(String locKey, Player player) {
+        long xp = accumulatedXP.getOrDefault(locKey, 0L);
+        if (xp <= 0) {
+            player.sendMessage("§c§l(!) §cNo XP accumulated.");
+            return;
+        }
+        player.giveExp((int) Math.min(xp, Integer.MAX_VALUE));
+        accumulatedXP.put(locKey, 0L);
+        save();
+        player.sendMessage("§a§l(!) §aCollected §b" + xp + " §aXP!");
+    }
+
+    public void sellAll(String locKey, Player player) {
+        Map<Material, Long> drops = accumulatedDrops.get(locKey);
+        if (drops == null || drops.isEmpty()) {
+            player.sendMessage("§c§l(!) §cNo items to sell.");
+            return;
+        }
+        // TODO: Integrate with Vault to sell items
+        // For now, just clear storage
+        long totalValue = 0;
+        accumulatedDrops.put(locKey, new HashMap<>());
+        save();
+        player.sendMessage("§a§l(!) §aSold all items for §b$" + totalValue + "§a!");
+    }
+
+    public void collectAll(String locKey, Player player) {
+        Map<Material, Long> drops = accumulatedDrops.get(locKey);
+        if (drops == null || drops.isEmpty()) {
+            player.sendMessage("§c§l(!) §cNo items to collect.");
+            return;
+        }
+        for (Map.Entry<Material, Long> entry : drops.entrySet()) {
+            long remaining = entry.getValue();
+            while (remaining > 0) {
+                int give = (int) Math.min(remaining, 64);
+                ItemStack stack = new ItemStack(entry.getKey(), give);
+                Map<Integer, ItemStack> overflow = player.getInventory().addItem(stack);
+                for (ItemStack leftover : overflow.values()) {
+                    player.getWorld().dropItemNaturally(player.getLocation(), leftover);
+                }
+                remaining -= give;
+            }
+        }
+        accumulatedDrops.put(locKey, new HashMap<>());
+        save();
+        player.sendMessage("§a§l(!) §aCollected all items!");
+    }
+
+    public void dropAll(String locKey, Player player) {
+        Map<Material, Long> drops = accumulatedDrops.get(locKey);
+        if (drops == null || drops.isEmpty()) {
+            player.sendMessage("§c§l(!) §cNo items to drop.");
+            return;
+        }
+        for (Map.Entry<Material, Long> entry : drops.entrySet()) {
+            long remaining = entry.getValue();
+            while (remaining > 0) {
+                int give = (int) Math.min(remaining, 64);
+                ItemStack stack = new ItemStack(entry.getKey(), give);
+                player.getWorld().dropItemNaturally(player.getLocation(), stack);
+                remaining -= give;
+            }
+        }
+        accumulatedDrops.put(locKey, new HashMap<>());
+        save();
+        player.sendMessage("§a§l(!) §aDropped all items!");
+    }
+
+    /**
+     * Called by MobStackManager when a mob from this spawner dies in ECO mode.
+     * Adds the drops to virtual storage instead of dropping them on the ground.
+     */
+    public void accumulateDrops(String locKey, List<ItemStack> drops) {
+        Map<Material, Long> storage = accumulatedDrops.computeIfAbsent(locKey, k -> new HashMap<>());
+        for (ItemStack drop : drops) {
+            if (drop == null) continue;
+            storage.merge(drop.getType(), (long) drop.getAmount(), Long::sum);
+        }
+        save();
+    }
+
+    /**
+     * Called by MobStackManager when a mob from this spawner dies in XP mode.
+     * Accumulates XP over time based on stack count.
+     */
+    public void accumulateXP(String locKey, long amount) {
+        accumulatedXP.merge(locKey, amount, Long::sum);
+        save();
     }
 
     // -------------------------------------------------------------------------
@@ -148,10 +273,10 @@ public class SpawnerStackManager implements Listener {
             }
         }
 
-        // Not a merge — open the mode GUI for any tracked stacked spawner.
+        // Not a merge — open the main GUI for any tracked stacked spawner.
         if (stackCounts.containsKey(locKey)) {
             event.setCancelled(true);
-            SpawnerModeGUI.open(player, clicked.getLocation(), getBlockMode(clicked));
+            SpawnerMainGUI.open(player, clicked.getLocation(), this);
         }
     }
 
@@ -377,7 +502,7 @@ public class SpawnerStackManager implements Listener {
     // Persistence
     // -------------------------------------------------------------------------
 
-    /** Writes all active stacked spawners to {@code spawners.yml} in the plugin data folder. */
+    /** Writes all active stacked spawners to {@code spawner-data.yml} in the plugin data folder. */
     private void save() {
         File file = new File(plugin.getDataFolder(), "spawner-data.yml");
         YamlConfiguration config = new YamlConfiguration();
@@ -400,6 +525,21 @@ public class SpawnerStackManager implements Listener {
             config.set(base + ".z",     Integer.parseInt(parts[3]));
             config.set(base + ".type",  type.name());
             config.set(base + ".count", count);
+
+            // Save accumulated drops
+            Map<Material, Long> drops = accumulatedDrops.get(locKey);
+            if (drops != null && !drops.isEmpty()) {
+                for (Map.Entry<Material, Long> dropEntry : drops.entrySet()) {
+                    config.set(base + ".drops." + dropEntry.getKey().name(), dropEntry.getValue());
+                }
+            }
+
+            // Save accumulated XP
+            Long xp = accumulatedXP.get(locKey);
+            if (xp != null && xp > 0) {
+                config.set(base + ".xp", xp);
+            }
+
             idx++;
         }
 
@@ -463,6 +603,31 @@ public class SpawnerStackManager implements Listener {
             String locKey = locKey(loc);
             stackCounts.put(locKey, count);
             stackTypes.put(locKey, type);
+
+            // Load accumulated drops
+            ConfigurationSection dropsSection = sec.getConfigurationSection("drops");
+            if (dropsSection != null) {
+                Map<Material, Long> drops = new HashMap<>();
+                for (String matName : dropsSection.getKeys(false)) {
+                    try {
+                        Material mat = Material.valueOf(matName);
+                        long amount = dropsSection.getLong(matName);
+                        drops.put(mat, amount);
+                    } catch (IllegalArgumentException e) {
+                        plugin.getLogger().warning("spawner-data.yml: unknown material '" + matName + "' in drops");
+                    }
+                }
+                if (!drops.isEmpty()) {
+                    accumulatedDrops.put(locKey, drops);
+                }
+            }
+
+            // Load accumulated XP
+            long xp = sec.getLong("xp", 0);
+            if (xp > 0) {
+                accumulatedXP.put(locKey, xp);
+            }
+
             valid.add(new Entry(loc, type, count));
         }
 
@@ -526,16 +691,10 @@ public class SpawnerStackManager implements Listener {
 
     /** Refreshes the floating label for a tracked spawner — called after a mode change. */
     public void refreshLabel(Location loc) {
-        String locKey = locKey(loc);
-        Integer count = stackCounts.get(locKey);
-        EntityType type = stackTypes.get(locKey);
+        String key = locKey(loc);
+        Integer count = stackCounts.get(key);
+        EntityType type = stackTypes.get(key);
         if (count != null && type != null) updateLabel(loc, type, count);
-    }
-
-    private static String getBlockMode(org.bukkit.block.Block block) {
-        if (!(block.getState() instanceof CreatureSpawner cs)) return "ECO";
-        String mode = cs.getPersistentDataContainer().get(SPAWNER_MODE_KEY, PersistentDataType.STRING);
-        return "XP".equals(mode) ? "XP" : "ECO";
     }
 
     private void removeLabel(String locKey) {
@@ -665,10 +824,6 @@ public class SpawnerStackManager implements Listener {
         }
         // All attempts landed outside the chunk — fall back to the block centre.
         return base.clone().add(0.5, 0.5, 0.5);
-    }
-
-    private static String locKey(Location loc) {
-        return loc.getWorld().getName() + "," + loc.getBlockX() + "," + loc.getBlockY() + "," + loc.getBlockZ();
     }
 
     private static String formatMobName(EntityType type) {

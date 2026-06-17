@@ -9,7 +9,7 @@ website: https://dev.bukkit.org/projects/dropheads
 version: 1.0.0
 api-version: 1.21
 depend: [BountyCore]
-softdepend: [HeadDatabase, VanishNoPacket, Vault]
+softdepend: [HeadDatabase, VanishNoPacket, Vault, PlaceholderAPI]
 
 # Hidden config.yml settings:
 # use-legacy-head-textures,use-1.19.2-vex-head-textures,use-1.20.2-bat-head-textures

@@ -64,7 +64,8 @@ public final class HeadHunter extends DropHeads {
         // ── Register listeners ────────────────────────────────────────────────
         getServer().getPluginManager().registerEvents(
                 new PlayerHeadListener(this, economy, messagesConfig), this);
-        getServer().getPluginManager().registerEvents(new MobStackManager(this, mobsConfig), this);
+        MobStackManager mobStackManager = new MobStackManager(this, mobsConfig);
+        getServer().getPluginManager().registerEvents(mobStackManager, this);
         getServer().getPluginManager().registerEvents(
                 new HeadLoreListener(mobsConfig), this);
         getServer().getPluginManager().registerEvents(
@@ -74,6 +75,10 @@ public final class HeadHunter extends DropHeads {
         spawnerStackManager = new SpawnerStackManager(this, spawnerConfig, mobsConfig);
         getServer().getPluginManager().registerEvents(spawnerStackManager, this);
         getServer().getPluginManager().registerEvents(new SpawnerModeListener(spawnerStackManager), this);
+        getServer().getPluginManager().registerEvents(new SpawnerMainListener(spawnerStackManager), this);
+        getServer().getPluginManager().registerEvents(new SpawnerStorageListener(spawnerStackManager), this);
+        // Link managers so MobStackManager can accumulate drops
+        mobStackManager.setSpawnerStackManager(spawnerStackManager);
 
         new SidebarManager(this, playerDataManager, economy, sidebarConfig).start();
 
@@ -183,5 +188,11 @@ public final class HeadHunter extends DropHeads {
                 new HHTopCommand(playerDataManager));
         getServer().getPluginManager().registerEvents(
                 new HHTopListener(playerDataManager), this);
+
+        // PlaceholderAPI integration
+        if (getServer().getPluginManager().getPlugin("PlaceholderAPI") != null) {
+            new HeadHunterExpansion(this, playerDataManager, mobsConfig).register();
+            getLogger().info("PlaceholderAPI expansion registered successfully.");
+        }
     }
 }
