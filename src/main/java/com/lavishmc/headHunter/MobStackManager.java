@@ -1,7 +1,10 @@
 package com.lavishmc.headHunter;
 
+import org.bukkit.Location;
 import org.bukkit.Material;
 import org.bukkit.NamespacedKey;
+import org.bukkit.block.Block;
+import org.bukkit.block.CreatureSpawner;
 import org.bukkit.entity.Entity;
 import org.bukkit.entity.EntityType;
 import org.bukkit.entity.LivingEntity;
@@ -74,6 +77,7 @@ public class MobStackManager implements Listener {
     private final Set<EntityType> naturalSpawnWhitelist;
     /** When true, every spawned mob has its AI disabled so it stands still. */
     private final boolean freezeMobs;
+    private final MobsConfig mobsConfig;
 
     /**
      * One entry per chunk.  Inner map: EntityType → UUID of the living stack
@@ -85,7 +89,8 @@ public class MobStackManager implements Listener {
     // Constructor
     // -------------------------------------------------------------------------
 
-    public MobStackManager(JavaPlugin plugin) {
+    public MobStackManager(JavaPlugin plugin, MobsConfig mobsConfig) {
+        this.mobsConfig = mobsConfig;
         // Hardcode the "headhunter" namespace so the key is always
         // "headhunter:stack_size" regardless of the registered plugin name.
         //noinspection deprecation  — intentional fixed namespace
@@ -250,6 +255,20 @@ public class MobStackManager implements Listener {
             }
         }
 
+        // For any mob from our stacked spawner, suppress vanilla XP entirely.
+        // XP mode: clear ALL drops and only spawn XP orbs; ECO mode: keep drops/heads, no XP.
+        String spawnerMode = getSpawnerMode(dead);
+        if (spawnerMode != null) {
+            event.setDroppedExp(0);
+            if ("XP".equals(spawnerMode)) {
+                event.getDrops().clear();
+                int xpPerMob = mobsConfig != null ? mobsConfig.getXpModeOrbs(dead.getType().name()) : 5;
+                dead.getWorld().spawn(dead.getLocation(), org.bukkit.entity.ExperienceOrb.class,
+                        orb -> orb.setExperience(xpPerMob * size));
+                return; // Exit early — no item multiplication needed in XP mode
+            }
+        }
+
         if (size <= 1) return;
 
         // Snapshot the drop list so we can safely append overflow stacks while iterating.
@@ -380,5 +399,30 @@ public class MobStackManager implements Listener {
                 entity.getLocation().getChunk().getX(),
                 entity.getLocation().getChunk().getZ()
         );
+    }
+
+    /**
+     * Returns the spawner mode ("ECO" or "XP") for a mob that came from our stacked
+     * spawner system, or null if the entity has no spawner-loc tag (natural spawn).
+     */
+    private static String getSpawnerMode(LivingEntity entity) {
+        String locStr = entity.getPersistentDataContainer()
+                .get(SpawnerStackManager.SPAWNER_LOC_KEY, PersistentDataType.STRING);
+        if (locStr == null) return null;
+        String[] parts = locStr.split(",", 4);
+        if (parts.length != 4) return null;
+        try {
+            int bx = Integer.parseInt(parts[1]);
+            int by = Integer.parseInt(parts[2]);
+            int bz = Integer.parseInt(parts[3]);
+            Block block = entity.getWorld().getBlockAt(bx, by, bz);
+            if (block.getType() != Material.SPAWNER) return "ECO";
+            if (!(block.getState() instanceof CreatureSpawner cs)) return "ECO";
+            String mode = cs.getPersistentDataContainer()
+                    .get(SpawnerStackManager.SPAWNER_MODE_KEY, PersistentDataType.STRING);
+            return "XP".equals(mode) ? "XP" : "ECO";
+        } catch (NumberFormatException e) {
+            return null;
+        }
     }
 }

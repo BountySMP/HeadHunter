@@ -66,6 +66,11 @@ public class HeadSellListener implements Listener {
                 && event.getAction() != Action.RIGHT_CLICK_BLOCK) return;
 
         Player player = event.getPlayer();
+
+        if (!player.hasPermission("headhunter.basic")) {
+            return;
+        }
+
         ItemStack item = player.getInventory().getItemInMainHand();
         if (item.getType() == Material.AIR) return;
 
@@ -111,6 +116,7 @@ public class HeadSellListener implements Listener {
         player.getInventory().setItemInMainHand(null);
 
         if (economy != null) economy.depositPlayer(player, (double) totalMoney);
+        playerData.addHeadsSold(player.getUniqueId(), count);
 
         long xpBefore = playerData.getXP(player.getUniqueId());
         if (totalXP > 0) playerData.addXP(player.getUniqueId(), totalXP);
@@ -159,6 +165,7 @@ public class HeadSellListener implements Listener {
         long totalXP    = awardsXP ? xpPerHead * totalCount : 0;
 
         if (economy != null) economy.depositPlayer(player, (double) totalMoney);
+        playerData.addHeadsSold(player.getUniqueId(), totalCount);
 
         long xpBefore = playerData.getXP(player.getUniqueId());
         if (totalXP > 0) playerData.addXP(player.getUniqueId(), totalXP);
@@ -180,12 +187,10 @@ public class HeadSellListener implements Listener {
         int levelNow = playerData.getLevel(uuid);
         int tierNow  = (levelNow - 1) / 5 + 1;
 
-        long xpAtCurrentLevel = playerData.xpToReachLevel(levelNow);
-        long xpInLevel        = totalXP - xpAtCurrentLevel;
-        long xpForLevel       = playerData.xpForLevel(levelNow);
+        long xpRequired = playerData.getXpRequiredForLevel(levelNow);
         boolean maxed = levelNow >= playerData.getMaxLevel();
-        int   percent = maxed ? 100 : (int) Math.min(100, (xpInLevel * 100 / xpForLevel));
-        float fill    = maxed ? 1.0f : Math.min(1.0f, (float) xpInLevel / xpForLevel);
+        int   percent = maxed ? 100 : (xpRequired > 0 ? (int) Math.min(100, totalXP * 100 / xpRequired) : 100);
+        float fill    = maxed ? 1.0f : (xpRequired > 0 ? Math.min(1.0f, (float) totalXP / xpRequired) : 1.0f);
 
         BossBar.Color color = sidebarConfig.getTierBossBarColor(tierNow);
 

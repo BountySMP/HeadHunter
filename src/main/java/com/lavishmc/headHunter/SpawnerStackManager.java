@@ -68,8 +68,19 @@ public class SpawnerStackManager implements Listener {
     private static final NamespacedKey LABEL_KEY =
             new NamespacedKey("headhunter", "spawner_label");
 
+    /** PDC key on spawner tile-entities storing the active mode: "ECO" or "XP". */
+    //noinspection deprecation
+    public static final NamespacedKey SPAWNER_MODE_KEY =
+            new NamespacedKey("headhunter", "spawner_mode");
+
+    /** PDC key on living stack-leader entities storing the locKey of their source spawner. */
+    //noinspection deprecation
+    public static final NamespacedKey SPAWNER_LOC_KEY =
+            new NamespacedKey("headhunter", "spawner_loc");
+
     private final JavaPlugin plugin;
     private final SpawnerConfig spawnerConfig;
+    private final MobsConfig mobsConfig;
     private final int maxStack;
 
     /** Location string → active BukkitTask for that spawner. */
@@ -81,9 +92,10 @@ public class SpawnerStackManager implements Listener {
     /** Location string → UUID of the floating TextDisplay label. */
     private final Map<String, UUID> labels = new HashMap<>();
 
-    public SpawnerStackManager(JavaPlugin plugin, SpawnerConfig spawnerConfig) {
+    public SpawnerStackManager(JavaPlugin plugin, SpawnerConfig spawnerConfig, MobsConfig mobsConfig) {
         this.plugin         = plugin;
         this.spawnerConfig  = spawnerConfig;
+        this.mobsConfig     = mobsConfig;
         this.maxStack       = spawnerConfig.getStackMax();
         load();
     }
@@ -102,48 +114,45 @@ public class SpawnerStackManager implements Listener {
 
         Player player = event.getPlayer();
         ItemStack held = player.getInventory().getItemInMainHand();
-        if (held.getType() != Material.SPAWNER) return;
-
-        EntityType heldType = getItemSpawnerType(held);
-        if (heldType == null) return; // not our custom spawner item
-
-        EntityType placedType = getBlockSpawnerType(clicked);
-        if (placedType == null || placedType != heldType) return;
-
-        // Same type — attempt merge.
         String locKey = locKey(clicked.getLocation());
-        int current = stackCounts.getOrDefault(locKey, 1);
 
-        if (current >= maxStack) {
-            player.sendMessage(msg("&c&l(!) &cThis spawner is already at the maximum stack size of &b" + maxStack + "&c."));
-            event.setCancelled(true);
-            return;
-        }
-
-        // Consume exactly 1 spawner from hand per merge click (skipped in creative mode).
-        if (player.getGameMode() != GameMode.CREATIVE) {
-            if (held.getAmount() <= 1) {
-                player.getInventory().setItemInMainHand(null);
-            } else {
-                held.setAmount(held.getAmount() - 1);
+        // Try merge: player is holding our custom spawner of the same type.
+        if (held.getType() == Material.SPAWNER) {
+            EntityType heldType = getItemSpawnerType(held);
+            if (heldType != null) {
+                EntityType placedType = getBlockSpawnerType(clicked);
+                if (placedType != null && placedType == heldType) {
+                    int current = stackCounts.getOrDefault(locKey, 1);
+                    if (current >= maxStack) {
+                        player.sendMessage(msg("&c&l(!) &cThis spawner is already at the maximum stack size of &b" + maxStack + "&c."));
+                        event.setCancelled(true);
+                        return;
+                    }
+                    if (player.getGameMode() != GameMode.CREATIVE) {
+                        if (held.getAmount() <= 1) player.getInventory().setItemInMainHand(null);
+                        else held.setAmount(held.getAmount() - 1);
+                    }
+                    int newCount = current + 1;
+                    stackCounts.put(locKey, newCount);
+                    stackTypes.put(locKey, placedType);
+                    CreatureSpawner cs = (CreatureSpawner) clicked.getState();
+                    cs.getPersistentDataContainer().set(SPAWNER_STACK_KEY, PersistentDataType.INTEGER, newCount);
+                    cs.update();
+                    updateLabel(clicked.getLocation(), placedType, newCount);
+                    restartTask(clicked.getLocation(), placedType, newCount);
+                    save();
+                    player.sendMessage(msg("&c&l(!) &aMerged &b1 &aspawner. Stack is now &b" + newCount + "/" + maxStack + "&a."));
+                    event.setCancelled(true);
+                    return;
+                }
             }
         }
 
-        int newCount = current + 1;
-        stackCounts.put(locKey, newCount);
-        stackTypes.put(locKey, placedType);
-
-        // Update block tile-entity PDC to reflect new count.
-        CreatureSpawner cs = (CreatureSpawner) clicked.getState();
-        cs.getPersistentDataContainer().set(SPAWNER_STACK_KEY, PersistentDataType.INTEGER, newCount);
-        cs.update();
-
-        updateLabel(clicked.getLocation(), placedType, newCount);
-        restartTask(clicked.getLocation(), placedType, newCount);
-        save();
-
-        player.sendMessage(msg("&c&l(!) &aMerged &b1 &aspawner. Stack is now &b" + newCount + "/" + maxStack + "&a."));
-        event.setCancelled(true);
+        // Not a merge — open the mode GUI for any tracked stacked spawner.
+        if (stackCounts.containsKey(locKey)) {
+            event.setCancelled(true);
+            SpawnerModeGUI.open(player, clicked.getLocation(), getBlockMode(clicked));
+        }
     }
 
     // -------------------------------------------------------------------------
@@ -242,7 +251,7 @@ public class SpawnerStackManager implements Listener {
         if (type == null) type = cs.getSpawnedType(); // fallback for vanilla spawners
 
         // Drop `count` individual single spawner items.
-        ItemStack single = buildSpawnerItem(type, 1);
+        ItemStack single = buildSpawnerItem(type, 1, mobsConfig);
         Location dropLoc = block.getLocation().add(0.5, 0.5, 0.5);
         for (int i = 0; i < count; i++) {
             block.getWorld().dropItemNaturally(dropLoc, single.clone());
@@ -271,11 +280,13 @@ public class SpawnerStackManager implements Listener {
                 removeLabel(locKey);
                 return;
             }
-            // Find an existing stack leader of this type in the spawner's chunk.
-            // This covers the post-restart case where stack entities survived but the
-            // in-memory MobStackManager map was cleared.
+            // Search nearby (not just the spawner's chunk) for an existing stack leader.
+            // Using a proximity search rather than getChunk().getEntities() prevents
+            // a false "no leader found" when the entity spawned near a chunk boundary
+            // and ended up in the adjacent chunk due to jitter.
             LivingEntity existingLeader = null;
-            for (org.bukkit.entity.Entity e : loc.getChunk().getEntities()) {
+            for (org.bukkit.entity.Entity e : loc.getWorld()
+                    .getNearbyEntities(loc.clone().add(0.5, 0.5, 0.5), 8, 8, 8)) {
                 if (!(e instanceof LivingEntity le)) continue;
                 if (e.getType() != type || !le.isValid() || le.isDead()) continue;
                 if (!le.getPersistentDataContainer().has(MOB_STACK_KEY, PersistentDataType.INTEGER)) continue;
@@ -291,6 +302,10 @@ public class SpawnerStackManager implements Listener {
                         .set(MOB_STACK_KEY, PersistentDataType.INTEGER, next);
                 existingLeader.setCustomName("§b§l" + formatMobName(type) + " §f§lx§6§l" + next);
                 existingLeader.setCustomNameVisible(true);
+                // Ensure the leader knows which spawner it came from.
+                if (!existingLeader.getPersistentDataContainer().has(SPAWNER_LOC_KEY, PersistentDataType.STRING)) {
+                    existingLeader.getPersistentDataContainer().set(SPAWNER_LOC_KEY, PersistentDataType.STRING, locKey);
+                }
             } else {
                 // No stack yet — defer to the next tick so MobStackManager's
                 // CreatureSpawnEvent handler finishes registering the entity as a
@@ -303,13 +318,15 @@ public class SpawnerStackManager implements Listener {
                             type,
                             org.bukkit.event.entity.CreatureSpawnEvent.SpawnReason.SPAWNER
                     );
-                    // MobStackManager has now processed the spawn event and set
-                    // PDC = 1.  Override with the real batch count.
-                    if (spawned instanceof LivingEntity le && stackCount > 1) {
-                        le.getPersistentDataContainer()
-                                .set(MOB_STACK_KEY, PersistentDataType.INTEGER, stackCount);
-                        le.setCustomName("§b§l" + formatMobName(type) + " §f§lx§6§l" + stackCount);
-                        le.setCustomNameVisible(true);
+                    if (spawned instanceof LivingEntity le) {
+                        // Tag with source spawner so death handler can look up the mode.
+                        le.getPersistentDataContainer().set(SPAWNER_LOC_KEY, PersistentDataType.STRING, locKey);
+                        if (stackCount > 1) {
+                            le.getPersistentDataContainer()
+                                    .set(MOB_STACK_KEY, PersistentDataType.INTEGER, stackCount);
+                            le.setCustomName("§b§l" + formatMobName(type) + " §f§lx§6§l" + stackCount);
+                            le.setCustomNameVisible(true);
+                        }
                     }
                 });
             }
@@ -493,7 +510,9 @@ public class SpawnerStackManager implements Listener {
         removeLabel(locKey);
         if (count <= 1) return;
 
-        String text = "§b§l" + formatMobName(type) + " Spawner §6§lx" + count;
+        String mode = getBlockMode(loc.getBlock());
+        String modeTag = "XP".equals(mode) ? "§a§lXP" : "§6§lECO";
+        String text = "§b§l" + formatMobName(type) + " §6§lx" + count + " §f§l| " + modeTag;
         Component component = LegacyComponentSerializer.legacySection().deserialize(text);
 
         Location labelLoc = loc.clone().add(0.5, 1.5, 0.5);
@@ -503,6 +522,20 @@ public class SpawnerStackManager implements Listener {
         display.setPersistent(false);
         display.getPersistentDataContainer().set(LABEL_KEY, PersistentDataType.BYTE, (byte) 1);
         labels.put(locKey, display.getUniqueId());
+    }
+
+    /** Refreshes the floating label for a tracked spawner — called after a mode change. */
+    public void refreshLabel(Location loc) {
+        String locKey = locKey(loc);
+        Integer count = stackCounts.get(locKey);
+        EntityType type = stackTypes.get(locKey);
+        if (count != null && type != null) updateLabel(loc, type, count);
+    }
+
+    private static String getBlockMode(org.bukkit.block.Block block) {
+        if (!(block.getState() instanceof CreatureSpawner cs)) return "ECO";
+        String mode = cs.getPersistentDataContainer().get(SPAWNER_MODE_KEY, PersistentDataType.STRING);
+        return "XP".equals(mode) ? "XP" : "ECO";
     }
 
     private void removeLabel(String locKey) {
@@ -583,7 +616,7 @@ public class SpawnerStackManager implements Listener {
         String levelStr = (section != null && section.contains("level"))
                 ? String.valueOf(section.getInt("level", 0))
                 : "N/A";
-        lore.add(loreComponent("§fLevel: §b" + levelStr));
+        lore.add(loreComponent("§fRequired Level: §b" + levelStr));
         if (section != null) {
             String customDrop = section.getString("custom_drop", "");
             if (customDrop != null && !customDrop.isBlank()) {
@@ -615,9 +648,23 @@ public class SpawnerStackManager implements Listener {
     // -------------------------------------------------------------------------
 
     private static Location jitterLocation(Location base) {
-        double ox = (1.0 + Math.random() * 0.5) * (Math.random() < 0.5 ? 1 : -1);
-        double oz = (1.0 + Math.random() * 0.5) * (Math.random() < 0.5 ? 1 : -1);
-        return base.clone().add(0.5 + ox, 0.5, 0.5 + oz);
+        // Keep the spawn within the spawner's own chunk so the entity is always
+        // found by MobStackManager's chunk scan and our own proximity search.
+        int chunkMinX = (base.getBlockX() >> 4) << 4;
+        int chunkMinZ = (base.getBlockZ() >> 4) << 4;
+        for (int attempt = 0; attempt < 8; attempt++) {
+            double ox = (1.0 + Math.random() * 0.5) * (Math.random() < 0.5 ? 1 : -1);
+            double oz = (1.0 + Math.random() * 0.5) * (Math.random() < 0.5 ? 1 : -1);
+            Location candidate = base.clone().add(0.5 + ox, 0.5, 0.5 + oz);
+            int cx = candidate.getBlockX();
+            int cz = candidate.getBlockZ();
+            if (cx >= chunkMinX && cx < chunkMinX + 16
+                    && cz >= chunkMinZ && cz < chunkMinZ + 16) {
+                return candidate;
+            }
+        }
+        // All attempts landed outside the chunk — fall back to the block centre.
+        return base.clone().add(0.5, 0.5, 0.5);
     }
 
     private static String locKey(Location loc) {

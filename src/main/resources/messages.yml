@@ -1,4 +1,4 @@
-# ============================================================
+﻿# ============================================================
 # HeadHunter — messages.yml
 # All player-facing strings and player-head economy settings.
 # Reload with: /hh reload messages
@@ -27,8 +27,8 @@ messages:
   rankup-xp-missing:    "&c&l(!) &cYou don't have enough XP to rank up! &b{current}/{required} XP"
   rankup-money-missing: "&c&l(!) &fYou need &b${amount} &fmore to rankup to &bLevel {level}&f!"
   rankup-success:       "&c&l(!) &a&lRANK UP! &bYou are now level {level}!"
-  rankup-tier-unlock:   "&c&l(!) &b&lTier {tier} unlocked!"
-  rankup-broadcast:     "§c§l(!) §b{player} §6has reached §b§lTier {tier}§6! §7\uD83C\uDF89"
+  rankup-tier-unlock:   "&c&l(!) &b&l{tier-name} Tier unlocked!"
+  rankup-broadcast:     "§c§l(!) §b{player} §6has completed §b{completed-tier} Tier§6! They have now unlocked §b{unlocked-tier} Tier§6!"
   rankup-title-top:     "§6§lRANK UP!"
   rankup-title-sub:     "§bYou are now Level {level}!"
   rankup-bar:           "§a§lRANK UP! §bLevel {level}"
@@ -81,3 +81,11 @@ messages:
   usage-hh-rankup:      "&c&l(!) &cUsage: /hh rankup <player>"
   usage-hh-reset:       "&c&l(!) &cUsage: /hh reset <player>"
   usage-hh-info:        "&c&l(!) &cUsage: /hh info <player>"
+
+top-command:
+  header: "§6§l--- HeadHunter Top (Page {page}/{total-pages}) ---"
+  entry: "{rank} §f{player} §7- §bLevel {level} §7(§e{xp} XP§7) - §e{heads} §7heads"
+  footer: "§6§l----------------------------------"
+  no-data: "§7No data yet."
+  invalid-page: "§cPage {page} does not exist."
+  entries-per-page: 10

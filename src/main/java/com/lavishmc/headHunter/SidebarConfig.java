@@ -42,6 +42,10 @@ public class SidebarConfig {
         return ChatColor.translateAlternateColorCodes('&', val);
     }
 
+    public String getServerName() {
+        return config.getString("server-name", "HeadHunter");
+    }
+
     public BossBar.Color getTierBossBarColor(int tier) {
         String name = config.getString("tier-colors." + tier, "WHITE").toUpperCase();
         try {

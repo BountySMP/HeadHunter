@@ -8,7 +8,8 @@ website: https://dev.bukkit.org/projects/dropheads
 #10=More descriptive entity-setting parse errors
 version: 1.0.0
 api-version: 1.21
-softdepend: [HeadDatabase, Essentials, VanishNoPacket, Vault]
+depend: [BountyCore]
+softdepend: [HeadDatabase, VanishNoPacket, Vault]
 
 # Hidden config.yml settings:
 # use-legacy-head-textures,use-1.19.2-vex-head-textures,use-1.20.2-bat-head-textures
@@ -53,7 +54,7 @@ commands:
 
   hh:
     description: HeadHunter admin commands
-    usage: /hh <give|setlevel|setxp|rankup|reset|info|reload>
+    usage: /hh <give|setlevel|setxp|rankup|reset|info|reload|top>
     permission: headhunter.admin
     permission-message: You do not have permission to use this command.
 
@@ -61,6 +62,21 @@ commands:
     description: Spend money to advance to the next rank level
     usage: /rankup
     aliases: [levelup]
+    permission: headhunter.basic
+    permission-message: You do not have permission to use this command.
+
+  spawnershop:
+    description: Open the spawner shop
+    usage: /spawnershop
+    aliases: [sshop]
+    permission: headhunter.basic
+    permission-message: You do not have permission to use this command.
+
+  hhtop:
+    description: Display HeadHunter leaderboard
+    usage: /hhtop [page]
+    permission: headhunter.basic
+    permission-message: You do not have permission to use this command.
 
   testlevelup:
     description: Preview rank-up visual effects without changing level
@@ -160,7 +176,7 @@ permissions:
     default: op
 
   headhunter.basic:
-    description: Permission to use HeadHunter player features
+    description: Permission to use all player-facing HeadHunter features (rankup, selling heads, spawner shop, leaderboard)
     default: true
 
   headhunter.admin:
@@ -178,7 +194,7 @@ permissions:
       dropheads.silentbehead.vanished: true
       dropheads.silentbehead.invisible: true
 
-  # NOTE: Currently supports Essentials and VanishNoPacket
+  # NOTE: Currently supports BountyCore and VanishNoPacket
   dropheads.silentbehead.vanished:
     description: Permission to hide behead messages while vanished
     default: true

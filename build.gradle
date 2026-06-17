@@ -28,6 +28,7 @@ dependencies {
     compileOnly('com.mojang:authlib:7.0.61')
     compileOnly(files("libs/DropHeads_v3.10.10.jar"))
     compileOnly 'com.github.MilkBowl:VaultAPI:1.7.1'
+    compileOnly files('../BountyCore/build/libs/BountyCore-1.0.0.jar')
 }
 
 tasks {

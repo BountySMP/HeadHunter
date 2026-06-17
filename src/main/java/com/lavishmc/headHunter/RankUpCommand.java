@@ -19,6 +19,7 @@ import org.bukkit.plugin.java.JavaPlugin;
 import java.time.Duration;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.Map;
 
 /**
  * Handles the /rankup (alias /levelup) command.
@@ -31,6 +32,15 @@ import java.util.concurrent.ConcurrentHashMap;
  * On success, money is deducted and the stored level is incremented by 1.</p>
  */
 public class RankUpCommand implements CommandExecutor, Listener {
+
+    private static final Map<Integer, String> TIER_NAMES = Map.of(
+        1, "Basic",
+        2, "Advanced",
+        3, "Extreme",
+        4, "Mythic",
+        5, "Elite",
+        6, "Divine"
+    );
 
     private final JavaPlugin plugin;
     private final PlayerDataManager playerData;
@@ -55,6 +65,11 @@ public class RankUpCommand implements CommandExecutor, Listener {
             return true;
         }
 
+        if (!player.hasPermission("headhunter.basic")) {
+            player.sendMessage(messages.get("no-permission"));
+            return true;
+        }
+
         UUID uuid         = player.getUniqueId();
         int  currentLevel = playerData.getLevel(uuid);
 
@@ -66,7 +81,7 @@ public class RankUpCommand implements CommandExecutor, Listener {
         int nextLevel = currentLevel + 1;
 
         long currentXP  = playerData.getXP(uuid);
-        long xpRequired = playerData.xpToReachLevel(nextLevel);
+        long xpRequired = playerData.getXpRequiredForLevel(currentLevel);
         if (currentXP < xpRequired) {
             player.sendMessage(messages.get("rankup-xp-missing",
                     "current", String.valueOf(currentXP),
@@ -92,7 +107,8 @@ public class RankUpCommand implements CommandExecutor, Listener {
 
         player.sendMessage(messages.get("rankup-success", "level", String.valueOf(nextLevel)));
         if (newTier > oldTier) {
-            player.sendMessage(messages.get("rankup-tier-unlock", "tier", String.valueOf(newTier)));
+            String tierName = TIER_NAMES.getOrDefault(newTier, "Tier " + newTier);
+            player.sendMessage(messages.get("rankup-tier-unlock", "tier-name", tierName));
         }
 
         showRankUpBar(player, nextLevel, newTier);
@@ -136,10 +152,13 @@ public class RankUpCommand implements CommandExecutor, Listener {
         firework.setFireworkMeta(meta);
 
         if (newTier > oldTier) {
+            String completedTier = TIER_NAMES.getOrDefault(oldTier, "Tier " + oldTier);
+            String unlockedTier = TIER_NAMES.getOrDefault(newTier, "Tier " + newTier);
             Component broadcast = LegacyComponentSerializer.legacySection().deserialize(
                     messages.getRaw("rankup-broadcast",
                             "player", player.getName(),
-                            "tier", String.valueOf(newTier)).replace("&", "§"));
+                            "completed-tier", completedTier,
+                            "unlocked-tier", unlockedTier).replace("&", "§"));
             plugin.getServer().getOnlinePlayers().forEach(p -> p.sendMessage(broadcast));
         }
     }
@@ -147,12 +166,10 @@ public class RankUpCommand implements CommandExecutor, Listener {
     private void showRankUpBar(Player player, int newLevel, int tier) {
         UUID uuid = player.getUniqueId();
 
-        long totalXP          = playerData.getXP(uuid);
-        long xpAtCurrentLevel = playerData.xpToReachLevel(newLevel);
-        long xpInLevel        = Math.max(0, totalXP - xpAtCurrentLevel);
-        long xpForLevel       = playerData.xpForLevel(newLevel);
+        long totalXP    = playerData.getXP(uuid); // 0 after XP reset on rankup
+        long xpRequired = playerData.getXpRequiredForLevel(newLevel);
         boolean maxed = newLevel >= playerData.getMaxLevel();
-        float fill    = maxed ? 1.0f : Math.min(1.0f, (float) xpInLevel / xpForLevel);
+        float fill    = maxed ? 1.0f : (xpRequired > 0 ? Math.min(1.0f, (float) totalXP / xpRequired) : 1.0f);
 
         BossBar.Color color = sidebarConfig.getTierBossBarColor(tier);
 

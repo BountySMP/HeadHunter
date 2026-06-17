@@ -10,33 +10,35 @@ xp-per-head: 1
 # Default flat money cost per /rankup when no mob entry matches the current level
 rankup-cost: 500
 
-# Cumulative XP required to reach each level (1-25)
-level-thresholds:
-  1: 0
-  2: 100
-  3: 150
-  4: 200
-  5: 250
-  6: 300
-  7: 350
-  8: 400
-  9: 450
-  10: 500
-  11: 600
-  12: 700
-  13: 800
-  14: 900
-  15: 1000
-  16: 1200
-  17: 1400
-  18: 1600
-  19: 1800
-  20: 2000
-  21: 2500
-  22: 3000
-  23: 3500
-  24: 4000
-  25: 5000
+# XP required to advance FROM each level to the next.
+# XP resets to 0 on every rank-up.
+# Level 25 is max — set to 0.
+level-xp-required:
+  1: 100
+  2: 50
+  3: 50
+  4: 50
+  5: 50
+  6: 50
+  7: 50
+  8: 50
+  9: 50
+  10: 100
+  11: 100
+  12: 100
+  13: 100
+  14: 100
+  15: 200
+  16: 200
+  17: 200
+  18: 200
+  19: 200
+  20: 500
+  21: 500
+  22: 500
+  23: 500
+  24: 1000
+  25: 0
 
 # Per-mob configuration
 # drop_chance:    probability [0.0-1.0] this mob's head drops

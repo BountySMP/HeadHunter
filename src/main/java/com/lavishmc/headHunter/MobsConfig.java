@@ -47,13 +47,13 @@ public class MobsConfig {
         return Math.max(0L, config.getLong("xp-per-head", 1L));
     }
 
-    public long xpToReachLevel(int n) {
-        return config.getLong("level-thresholds." + n, 0L);
-    }
-
-    public long xpForLevel(int n) {
-        if (n >= MAX_LEVEL) return Long.MAX_VALUE;
-        return xpToReachLevel(n + 1) - xpToReachLevel(n);
+    /**
+     * XP required to advance FROM the given level to the next.
+     * Returns 0 for MAX_LEVEL (cannot advance further).
+     */
+    public long getXpRequiredForLevel(int level) {
+        if (level >= MAX_LEVEL) return 0;
+        return Math.max(0, config.getLong("level-xp-required." + level, 0));
     }
 
     public long getRankupCost(int level) {
@@ -67,6 +67,15 @@ public class MobsConfig {
             }
         }
         return config.getLong("rankup-cost", 500L);
+    }
+
+    /** XP orbs to spawn per mob (×stack size) when a spawner is in XP mode. */
+    public int getXpModeOrbs(String mobType) {
+        ConfigurationSection section = getMobSection(mobType);
+        if (section != null && section.isInt("xp_mode_orbs")) {
+            return Math.max(1, section.getInt("xp_mode_orbs"));
+        }
+        return Math.max(1, config.getInt("xp-mode-orbs-default", 5));
     }
 
     public ConfigurationSection getMobSection(String mobType) {

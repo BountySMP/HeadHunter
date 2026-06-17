@@ -6,7 +6,6 @@ import org.bukkit.scoreboard.DisplaySlot;
 import org.bukkit.scoreboard.Objective;
 import org.bukkit.scoreboard.RenderType;
 import org.bukkit.scoreboard.Scoreboard;
-import org.bukkit.scoreboard.ScoreboardManager;
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.Listener;
@@ -29,10 +28,10 @@ public class SidebarManager implements Listener {
     private final PlayerDataManager playerData;
     private final Economy economy;
     private final SidebarConfig sidebarConfig;
-    private final String serverName;
 
-    private final Map<UUID, Scoreboard> boards = new HashMap<>();
     private final Map<UUID, Map<Integer, String>> prevLines = new HashMap<>();
+    private Scoreboard mainScoreboard;
+    private Objective sidebarObjective;
 
     public SidebarManager(JavaPlugin plugin, PlayerDataManager playerData,
                           Economy economy, SidebarConfig sidebarConfig) {
@@ -40,18 +39,29 @@ public class SidebarManager implements Listener {
         this.playerData    = playerData;
         this.economy       = economy;
         this.sidebarConfig = sidebarConfig;
-        this.serverName    = plugin.getConfig().getString("server-name", "HeadHunter");
     }
 
     public void start() {
         plugin.getServer().getPluginManager().registerEvents(this, plugin);
+
+        // Get the main scoreboard shared by all players
+        mainScoreboard = Bukkit.getScoreboardManager().getMainScoreboard();
+
+        // Register the sidebar objective on the main scoreboard
+        sidebarObjective = mainScoreboard.getObjective("hh_sidebar");
+        if (sidebarObjective == null) {
+            String serverName = sidebarConfig.getServerName();
+            sidebarObjective = mainScoreboard.registerNewObjective(
+                "hh_sidebar", "dummy", "§a§l" + serverName, RenderType.INTEGER);
+            sidebarObjective.setDisplaySlot(DisplaySlot.SIDEBAR);
+        }
+
         plugin.getServer().getScheduler().runTaskTimer(plugin, this::updateAll, 20L, 20L);
     }
 
     @EventHandler
     public void onPlayerQuit(PlayerQuitEvent event) {
         UUID uuid = event.getPlayer().getUniqueId();
-        boards.remove(uuid);
         prevLines.remove(uuid);
     }
 
@@ -60,22 +70,19 @@ public class SidebarManager implements Listener {
         for (Player player : Bukkit.getOnlinePlayers()) {
             updatePlayer(player, dateTime);
         }
-        boards.keySet().removeIf(uuid -> Bukkit.getPlayer(uuid) == null);
         prevLines.keySet().removeIf(uuid -> Bukkit.getPlayer(uuid) == null);
     }
 
     private void updatePlayer(Player player, String dateTime) {
         UUID uuid = player.getUniqueId();
-
-        ScoreboardManager manager = Bukkit.getScoreboardManager();
-        Scoreboard board = boards.computeIfAbsent(uuid, k -> manager.getNewScoreboard());
         Map<Integer, String> lines = prevLines.computeIfAbsent(uuid, k -> new HashMap<>());
 
-        Objective obj = board.getObjective("hh_sidebar");
-        if (obj == null) {
-            obj = board.registerNewObjective("hh_sidebar", "dummy", "§a§l" + serverName, RenderType.INTEGER);
-            obj.setDisplaySlot(DisplaySlot.SIDEBAR);
-        }
+        // Update the objective display name
+        String serverName = sidebarConfig.getServerName();
+        sidebarObjective.displayName(net.kyori.adventure.text.Component.text(serverName)
+                .color(net.kyori.adventure.text.format.NamedTextColor.GREEN)
+                .decoration(net.kyori.adventure.text.format.TextDecoration.BOLD, true)
+                .decoration(net.kyori.adventure.text.format.TextDecoration.ITALIC, false));
 
         int level = playerData.getLevel(uuid);
         boolean maxed = level >= playerData.getMaxLevel();
@@ -85,12 +92,11 @@ public class SidebarManager implements Listener {
             xpLine = sidebarConfig.getLine("xp-maxed");
         } else {
             long totalXP    = playerData.getXP(uuid);
-            long xpAtLevel  = playerData.xpToReachLevel(level);
-            long xpForLevel = playerData.xpForLevel(level);
-            int percent = xpForLevel > 0
-                    ? (int) Math.min(100, (totalXP - xpAtLevel) * 100 / xpForLevel)
-                    : 100;
-            xpLine = sidebarConfig.getLine("xp", "xp-percent", String.valueOf(percent));
+            long xpRequired = playerData.getXpRequiredForLevel(level);
+            int percentage = xpRequired > 0 ? (int) ((totalXP * 100L) / xpRequired) : 0;
+            xpLine = sidebarConfig.getLine("xp",
+                    "xp-current",  String.valueOf(percentage) + "%",
+                    "xp-required", "100%");
         }
 
         String balanceLine;
@@ -101,14 +107,12 @@ public class SidebarManager implements Listener {
             balanceLine = sidebarConfig.getLine("balance", "balance", "N/A");
         }
 
-        setLine(obj, board, lines, sidebarConfig.getLine("datetime", "datetime", dateTime), 6);
-        setLine(obj, board, lines, sidebarConfig.getLine("separator"),                       5);
-        setLine(obj, board, lines, sidebarConfig.getLine("player", "player", player.getName()), 4);
-        setLine(obj, board, lines, balanceLine,                                              3);
-        setLine(obj, board, lines, sidebarConfig.getLine("level", "level", String.valueOf(level)), 2);
-        setLine(obj, board, lines, xpLine,                                                   1);
-
-        player.setScoreboard(board);
+        setLine(sidebarObjective, mainScoreboard, lines, sidebarConfig.getLine("datetime", "datetime", dateTime), 6);
+        setLine(sidebarObjective, mainScoreboard, lines, sidebarConfig.getLine("separator"),                       5);
+        setLine(sidebarObjective, mainScoreboard, lines, sidebarConfig.getLine("player", "player", player.getName()), 4);
+        setLine(sidebarObjective, mainScoreboard, lines, balanceLine,                                              3);
+        setLine(sidebarObjective, mainScoreboard, lines, sidebarConfig.getLine("level", "level", String.valueOf(level)), 2);
+        setLine(sidebarObjective, mainScoreboard, lines, xpLine,                                                   1);
     }
 
     private static void setLine(Objective obj, Scoreboard board,

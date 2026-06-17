@@ -64,15 +64,16 @@ public final class HeadHunter extends DropHeads {
         // ── Register listeners ────────────────────────────────────────────────
         getServer().getPluginManager().registerEvents(
                 new PlayerHeadListener(this, economy, messagesConfig), this);
-        getServer().getPluginManager().registerEvents(new MobStackManager(this), this);
+        getServer().getPluginManager().registerEvents(new MobStackManager(this, mobsConfig), this);
         getServer().getPluginManager().registerEvents(
                 new HeadLoreListener(mobsConfig), this);
         getServer().getPluginManager().registerEvents(
                 new HeadSellListener(this, economy, playerDataManager,
                         mobsConfig, messagesConfig, sidebarConfig), this);
         getServer().getPluginManager().registerEvents(new SunlightProtectionListener(), this);
-        spawnerStackManager = new SpawnerStackManager(this, spawnerConfig);
+        spawnerStackManager = new SpawnerStackManager(this, spawnerConfig, mobsConfig);
         getServer().getPluginManager().registerEvents(spawnerStackManager, this);
+        getServer().getPluginManager().registerEvents(new SpawnerModeListener(spawnerStackManager), this);
 
         new SidebarManager(this, playerDataManager, economy, sidebarConfig).start();
 
@@ -171,5 +172,16 @@ public final class HeadHunter extends DropHeads {
             return true;
         };
         Objects.requireNonNull(getCommand("hhtest")).setExecutor(hhTest);
+
+        // /spawnershop
+        Objects.requireNonNull(getCommand("spawnershop")).setExecutor(new SpawnerShopCommand());
+        getServer().getPluginManager().registerEvents(
+                new SpawnerShopListener(mobsConfig, playerDataManager, economy), this);
+
+        // /hhtop
+        Objects.requireNonNull(getCommand("hhtop")).setExecutor(
+                new HHTopCommand(playerDataManager));
+        getServer().getPluginManager().registerEvents(
+                new HHTopListener(playerDataManager), this);
     }
 }

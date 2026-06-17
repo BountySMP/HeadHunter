@@ -66,6 +66,44 @@ public class MessagesConfig {
         return config.getBoolean("player-heads.drop-on-pvp-only", false);
     }
 
+    // ── Top command config ─────────────────────────────────────────────────────
+
+    public String getTopHeader(String... replacements) {
+        return applyReplacements(config.getString("top-command.header",
+                "§6§l--- HeadHunter Top (Page {page}/{total-pages}) ---"), replacements);
+    }
+
+    public String getTopEntry(String... replacements) {
+        return applyReplacements(config.getString("top-command.entry",
+                "§e#{rank} §f{player} §7- §e{heads} §7heads"), replacements);
+    }
+
+    public String getTopFooter() {
+        return ChatColor.translateAlternateColorCodes('&',
+                config.getString("top-command.footer", "§6§l----------------------------------"));
+    }
+
+    public String getTopNoData() {
+        return ChatColor.translateAlternateColorCodes('&',
+                config.getString("top-command.no-data", "§7No data yet."));
+    }
+
+    public String getTopInvalidPage(String... replacements) {
+        return applyReplacements(config.getString("top-command.invalid-page",
+                "§cPage {page} does not exist."), replacements);
+    }
+
+    public int getTopEntriesPerPage() {
+        return Math.max(1, config.getInt("top-command.entries-per-page", 10));
+    }
+
+    private String applyReplacements(String text, String... replacements) {
+        for (int i = 0; i + 1 < replacements.length; i += 2) {
+            text = text.replace("{" + replacements[i] + "}", replacements[i + 1]);
+        }
+        return ChatColor.translateAlternateColorCodes('&', text);
+    }
+
     private void saveDefault() {
         File file = new File(plugin.getDataFolder(), FILE_NAME);
         if (!file.exists()) plugin.saveResource(FILE_NAME, false);

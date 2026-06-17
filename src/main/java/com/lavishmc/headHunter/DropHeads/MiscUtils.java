@@ -15,6 +15,7 @@ import net.evmodder.EvLib.bukkit.YetAnotherProfile;
 import net.evmodder.EvLib.util.FileIO;
 import net.evmodder.EvLib.util.ReflectionUtils;
 import net.evmodder.EvLib.util.WebHook;
+import com.bountysmp.bountyCore.BountyCore;
 import org.bukkit.Bukkit;
 import org.bukkit.Material;
 import org.bukkit.Sound;
@@ -385,17 +386,11 @@ public final class MiscUtils{
 		}
 	}
 
-	private static Method essMethodGetUser, essMethodIsVanished;
 	private static Method vanishMethodGetManager, vanishMethodIsVanished;
 	public static final boolean isVanished(Player p){
-		Plugin essPlugin = p.getServer().getPluginManager().getPlugin("Essentials");
-		if(essPlugin != null){
-			if(essMethodGetUser == null){
-				essMethodGetUser = ReflectionUtils.getMethod(ReflectionUtils.getClass("com.earth2me.essentials.Essentials"), "getUser", Player.class);
-				essMethodIsVanished = ReflectionUtils.getMethod(ReflectionUtils.getClass("com.earth2me.essentials.User"), "isVanished");
-			}
-			Object essUser = ReflectionUtils.call(essMethodGetUser, essPlugin, p);
-			return (boolean)ReflectionUtils.call(essMethodIsVanished, essUser);
+		BountyCore bountyCore = BountyCore.getInstance();
+		if(bountyCore != null && bountyCore.getVanishManager().isVanished(p.getUniqueId())){
+			return true;
 		}
 		Plugin vanishPlugin = p.getServer().getPluginManager().getPlugin("VanishNoPacket");
 		if(vanishPlugin != null){

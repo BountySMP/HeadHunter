@@ -19,6 +19,7 @@ import org.bukkit.plugin.java.JavaPlugin;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
@@ -31,7 +32,7 @@ public class HHAdminCommand implements CommandExecutor, TabCompleter {
     private static final String PERM = "headhunter.admin";
 
     private static final List<String> SUBCOMMANDS = List.of(
-            "give", "setlevel", "setxp", "rankup", "reset", "info", "reload", "testlevelup"
+            "give", "setlevel", "setxp", "rankup", "reset", "info", "reload", "testlevelup", "top"
     );
 
     private static final List<String> RELOAD_TARGETS = List.of(
@@ -90,6 +91,7 @@ public class HHAdminCommand implements CommandExecutor, TabCompleter {
             case "info"     -> cmdInfo(sender, args);
             case "reload"       -> cmdReload(sender, args);
             case "testlevelup"  -> cmdTestLevelUp(sender);
+            case "top"          -> cmdTop(sender, args);
             default             -> sendUsage(sender);
         }
         return true;
@@ -230,9 +232,10 @@ public class HHAdminCommand implements CommandExecutor, TabCompleter {
         int  level = playerData.getLevel(uuid);
         long xp    = playerData.getXP(uuid);
 
+        long xpRequired = playerData.getXpRequiredForLevel(level);
         String xpNeeded = level >= playerData.getMaxLevel()
                 ? "MAX LEVEL"
-                : (playerData.xpToReachLevel(level + 1) - xp) + " XP needed for level " + (level + 1);
+                : xp + " / " + xpRequired + " XP (" + Math.max(0, xpRequired - xp) + " remaining)";
 
         String balance = economy != null
                 ? "$" + String.format("%.2f", economy.getBalance(target))
@@ -402,6 +405,71 @@ public class HHAdminCommand implements CommandExecutor, TabCompleter {
         return LegacyComponentSerializer.legacyAmpersand().deserialize(legacy);
     }
 
+    private void cmdTop(CommandSender sender, String[] args) {
+        // Parse page number
+        int page = 1;
+        if (args.length >= 2) {
+            try {
+                page = Integer.parseInt(args[1]);
+            } catch (NumberFormatException e) {
+                sender.sendMessage("§cInvalid page number.");
+                return;
+            }
+        }
+
+        // Gather all players who have ever joined (exist in playerdata.json)
+        java.util.Set<UUID> allPlayers = playerData.getAllPlayerUUIDs();
+
+        // Build sorted list: all players sorted by heads sold descending
+        List<Map.Entry<UUID, Long>> sorted = allPlayers.stream()
+                .map(uuid -> Map.entry(uuid, playerData.getTotalHeadsSold(uuid)))
+                .sorted((a, b) -> Long.compare(b.getValue(), a.getValue()))
+                .collect(Collectors.toList());
+
+        // Pagination
+        int entriesPerPage = messages.getTopEntriesPerPage();
+        int totalPages = sorted.isEmpty() ? 1 : (int) Math.ceil((double) sorted.size() / entriesPerPage);
+
+        if (page < 1 || page > totalPages) {
+            sender.sendMessage(messages.getTopInvalidPage("page", String.valueOf(page)));
+            return;
+        }
+
+        int startIndex = (page - 1) * entriesPerPage;
+        int endIndex = Math.min(startIndex + entriesPerPage, sorted.size());
+
+        // Display header
+        sender.sendMessage(messages.getTopHeader(
+                "page", String.valueOf(page),
+                "total-pages", String.valueOf(totalPages)));
+
+        // Display entries (if any)
+        for (int i = startIndex; i < endIndex; i++) {
+            Map.Entry<UUID, Long> entry = sorted.get(i);
+            int rank = i + 1;
+            String playerName = Bukkit.getOfflinePlayer(entry.getKey()).getName();
+            if (playerName == null) playerName = "Unknown";
+            long count = entry.getValue();
+            String formatted = String.format("%,d", count);
+
+            // Color rank based on position
+            String coloredRank = switch (rank) {
+                case 1 -> "§e#" + rank;
+                case 2 -> "§6#" + rank;
+                case 3 -> "§8#" + rank;
+                default -> "§c#" + rank;
+            };
+
+            sender.sendMessage(messages.getTopEntry(
+                    "rank", coloredRank,
+                    "player", playerName,
+                    "heads", formatted));
+        }
+
+        // Display footer
+        sender.sendMessage(messages.getTopFooter());
+    }
+
     private static void sendUsage(CommandSender sender) {
         sender.sendMessage(msg("&b/hh give <player> <mob> [amount]"));
         sender.sendMessage(msg("&b/hh setlevel <player> <level>"));
@@ -411,5 +479,6 @@ public class HHAdminCommand implements CommandExecutor, TabCompleter {
         sender.sendMessage(msg("&b/hh info <player>"));
         sender.sendMessage(msg("&b/hh reload [mobs|spawners|sidebar|messages|all]"));
         sender.sendMessage(msg("&b/hh testlevelup"));
+        sender.sendMessage(msg("&b/hh top [page]"));
     }
 }
