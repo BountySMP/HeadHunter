@@ -47,6 +47,15 @@ public class SpawnerConfig {
         return Math.max(rate, MIN_RATE);
     }
 
+    /**
+     * Gets the XP amount per mob in XP mode.
+     * Default is 0.25 XP per mob.
+     * Supports decimal values for fine-tuned XP rates.
+     */
+    public double getXpPerMob() {
+        return Math.max(0.01, config.getDouble("xp-per-mob", 0.25));
+    }
+
     private void saveDefault() {
         File file = new File(plugin.getDataFolder(), FILE_NAME);
         if (!file.exists()) plugin.saveResource(FILE_NAME, false);

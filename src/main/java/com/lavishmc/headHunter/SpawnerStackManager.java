@@ -18,6 +18,7 @@ import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
 import org.bukkit.event.block.BlockBreakEvent;
 import org.bukkit.event.block.BlockPlaceEvent;
+import org.bukkit.event.entity.SpawnerSpawnEvent;
 import org.bukkit.event.player.PlayerInteractEvent;
 import org.bukkit.inventory.EquipmentSlot;
 import org.bukkit.inventory.ItemStack;
@@ -82,6 +83,7 @@ public class SpawnerStackManager implements Listener {
     private final SpawnerConfig spawnerConfig;
     private final MobsConfig mobsConfig;
     private final int maxStack;
+    private final net.milkbowl.vault.economy.Economy economy;
 
     /** Location string → active BukkitTask for that spawner. */
     private final Map<String, BukkitTask> tasks = new HashMap<>();
@@ -93,15 +95,92 @@ public class SpawnerStackManager implements Listener {
     private final Map<String, UUID> labels = new HashMap<>();
     /** Location string → (Material → amount) accumulated drops in ECO mode. */
     private final Map<String, Map<Material, Long>> accumulatedDrops = new HashMap<>();
-    /** Location string → accumulated XP in XP mode. */
-    private final Map<String, Long> accumulatedXP = new HashMap<>();
+    /** Location string → accumulated XP in XP mode (supports decimals). */
+    private final Map<String, Double> accumulatedXP = new HashMap<>();
+    /** Location string → (ItemStack with full metadata) accumulated items. */
+    private final Map<String, List<ItemStack>> accumulatedItems = new HashMap<>();
 
-    public SpawnerStackManager(JavaPlugin plugin, SpawnerConfig spawnerConfig, MobsConfig mobsConfig) {
+    public SpawnerStackManager(JavaPlugin plugin, SpawnerConfig spawnerConfig, MobsConfig mobsConfig, net.milkbowl.vault.economy.Economy economy) {
         this.plugin         = plugin;
         this.spawnerConfig  = spawnerConfig;
         this.mobsConfig     = mobsConfig;
         this.maxStack       = spawnerConfig.getStackMax();
+        this.economy        = economy;
         load();
+    }
+
+    /**
+     * Gets a mob head for the given entity type using DropHeads API.
+     */
+    public ItemStack getMobHead(EntityType type) {
+        if (type == null) return null;
+        try {
+            // Access the DropHeads API from the plugin instance
+            if (plugin instanceof com.lavishmc.headHunter.HeadHunter hh) {
+                return hh.getAPI().getHead(type, null);
+            }
+        } catch (Exception e) {
+            plugin.getLogger().warning("Failed to get mob head for " + type + ": " + e.getMessage());
+        }
+        return null;
+    }
+
+    /**
+     * Gets the drops that would come from killing a mob of the given type.
+     * This includes the head from DropHeads and vanilla mob drops.
+     */
+    private List<ItemStack> getDropsForMob(EntityType type, int count) {
+        List<ItemStack> drops = new ArrayList<>();
+
+        // Add mob head (one per mob in stack)
+        ItemStack head = getMobHead(type);
+        if (head != null) {
+            head.setAmount(count);
+            drops.add(head);
+        }
+
+        // Add vanilla drops based on mob type
+        // This is a simplified version - you may want to add more drops per mob type
+        switch (type) {
+            case PIG -> {
+                drops.add(new ItemStack(Material.PORKCHOP, count * (1 + (int)(Math.random() * 2))));
+            }
+            case COW -> {
+                drops.add(new ItemStack(Material.BEEF, count * (1 + (int)(Math.random() * 2))));
+                drops.add(new ItemStack(Material.LEATHER, count * (int)(Math.random() * 3)));
+            }
+            case CHICKEN -> {
+                drops.add(new ItemStack(Material.CHICKEN, count));
+                drops.add(new ItemStack(Material.FEATHER, count * (int)(Math.random() * 3)));
+            }
+            case SHEEP -> {
+                drops.add(new ItemStack(Material.MUTTON, count * (1 + (int)(Math.random() * 2))));
+                // Wool would need to check sheep color
+                drops.add(new ItemStack(Material.WHITE_WOOL, count));
+            }
+            case ZOMBIE -> {
+                drops.add(new ItemStack(Material.ROTTEN_FLESH, count * (int)(Math.random() * 3)));
+            }
+            case SKELETON -> {
+                drops.add(new ItemStack(Material.BONE, count * (int)(Math.random() * 3)));
+                drops.add(new ItemStack(Material.ARROW, count * (int)(Math.random() * 3)));
+            }
+            case CREEPER -> {
+                drops.add(new ItemStack(Material.GUNPOWDER, count * (int)(Math.random() * 3)));
+            }
+            case SPIDER -> {
+                drops.add(new ItemStack(Material.STRING, count * (int)(Math.random() * 3)));
+            }
+            case ENDERMAN -> {
+                drops.add(new ItemStack(Material.ENDER_PEARL, count));
+            }
+            case BLAZE -> {
+                drops.add(new ItemStack(Material.BLAZE_ROD, count));
+            }
+            // Add more mob types as needed
+        }
+
+        return drops;
     }
 
     // -------------------------------------------------------------------------
@@ -112,8 +191,12 @@ public class SpawnerStackManager implements Listener {
         return accumulatedDrops.getOrDefault(locKey, new HashMap<>());
     }
 
-    public long getAccumulatedXP(String locKey) {
-        return accumulatedXP.getOrDefault(locKey, 0L);
+    public List<ItemStack> getAccumulatedItems(String locKey) {
+        return accumulatedItems.getOrDefault(locKey, new ArrayList<>());
+    }
+
+    public double getAccumulatedXP(String locKey) {
+        return accumulatedXP.getOrDefault(locKey, 0.0);
     }
 
     public EntityType getSpawnerType(String locKey) {
@@ -134,43 +217,130 @@ public class SpawnerStackManager implements Listener {
         return "XP".equals(mode) ? "XP" : "ECO";
     }
 
+    public MobsConfig getMobsConfig() {
+        return mobsConfig;
+    }
+
     public void collectXP(String locKey, Player player) {
-        long xp = accumulatedXP.getOrDefault(locKey, 0L);
+        double xp = accumulatedXP.getOrDefault(locKey, 0.0);
         if (xp <= 0) {
             player.sendMessage("§c§l(!) §cNo XP accumulated.");
             return;
         }
-        player.giveExp((int) Math.min(xp, Integer.MAX_VALUE));
-        accumulatedXP.put(locKey, 0L);
+        // Give XP as integer (rounds down)
+        int xpToGive = (int) Math.min(xp, Integer.MAX_VALUE);
+        if (xpToGive > 0) {
+            player.giveExp(xpToGive);
+        }
+        accumulatedXP.put(locKey, 0.0);
         save();
-        player.sendMessage("§a§l(!) §aCollected §b" + xp + " §aXP!");
+        player.sendMessage("§a§l(!) §aCollected §b" + String.format("%.2f", xp) + " §aXP!");
     }
 
     public void sellAll(String locKey, Player player) {
-        Map<Material, Long> drops = accumulatedDrops.get(locKey);
-        if (drops == null || drops.isEmpty()) {
+        List<ItemStack> items = accumulatedItems.get(locKey);
+        if (items == null || items.isEmpty()) {
             player.sendMessage("§c§l(!) §cNo items to sell.");
             return;
         }
-        // TODO: Integrate with Vault to sell items
-        // For now, just clear storage
-        long totalValue = 0;
-        accumulatedDrops.put(locKey, new HashMap<>());
+
+        if (economy == null) {
+            player.sendMessage("§c§l(!) §cEconomy system not available.");
+            return;
+        }
+
+        double totalValue = 0.0;
+        int headsSold = 0;
+        int itemsNotSold = 0;
+
+        // Get the spawner's mob type for price lookup
+        EntityType spawnerType = stackTypes.get(locKey);
+        String mobType = spawnerType != null ? spawnerType.name() : null;
+
+        for (ItemStack item : items) {
+            if (item == null || item.getAmount() <= 0) continue;
+
+            // Check if this is a head (skull material)
+            if (isHeadItem(item)) {
+                // Get price from mobs.yml
+                double pricePerHead = getHeadPrice(mobType);
+
+                if (pricePerHead > 0) {
+                    double itemValue = pricePerHead * item.getAmount();
+                    totalValue += itemValue;
+                    headsSold += item.getAmount();
+                } else {
+                    itemsNotSold += item.getAmount();
+                }
+            } else {
+                // Regular items - not sold yet (no worth system)
+                itemsNotSold += item.getAmount();
+            }
+        }
+
+        // Give money to player
+        if (totalValue > 0) {
+            economy.depositPlayer(player, totalValue);
+        }
+
+        // Clear all storage (both sold and unsold items)
+        accumulatedItems.put(locKey, new ArrayList<>());
         save();
-        player.sendMessage("§a§l(!) §aSold all items for §b$" + totalValue + "§a!");
+
+        // Send feedback message
+        if (headsSold > 0) {
+            player.sendMessage("§a§l(!) §aSold §b" + headsSold + " §ahead(s) for §6$" + String.format("%.2f", totalValue) + "§a!");
+            if (itemsNotSold > 0) {
+                player.sendMessage("§e§l(!) §e" + itemsNotSold + " item(s) were discarded (no worth system yet).");
+            }
+        } else if (itemsNotSold > 0) {
+            player.sendMessage("§c§l(!) §cNo heads to sell. §e" + itemsNotSold + " §eitem(s) discarded.");
+        } else {
+            player.sendMessage("§c§l(!) §cNothing to sell.");
+        }
+    }
+
+    /**
+     * Checks if an ItemStack is a head/skull item.
+     */
+    private boolean isHeadItem(ItemStack item) {
+        Material type = item.getType();
+        return type == Material.PLAYER_HEAD
+            || type == Material.ZOMBIE_HEAD
+            || type == Material.SKELETON_SKULL
+            || type == Material.WITHER_SKELETON_SKULL
+            || type == Material.CREEPER_HEAD
+            || type == Material.PIGLIN_HEAD
+            || type == Material.DRAGON_HEAD;
+    }
+
+    /**
+     * Gets the sell price for a mob's head from mobs.yml.
+     */
+    private double getHeadPrice(String mobType) {
+        if (mobType == null || mobsConfig == null) return 0.0;
+
+        org.bukkit.configuration.ConfigurationSection mobSection = mobsConfig.getMobSection(mobType);
+        if (mobSection == null) return 0.0;
+
+        return mobSection.getDouble("sell_price", 0.0);
     }
 
     public void collectAll(String locKey, Player player) {
-        Map<Material, Long> drops = accumulatedDrops.get(locKey);
-        if (drops == null || drops.isEmpty()) {
+        List<ItemStack> items = accumulatedItems.get(locKey);
+        if (items == null || items.isEmpty()) {
             player.sendMessage("§c§l(!) §cNo items to collect.");
             return;
         }
-        for (Map.Entry<Material, Long> entry : drops.entrySet()) {
-            long remaining = entry.getValue();
+
+        for (ItemStack item : items) {
+            if (item == null || item.getAmount() <= 0) continue;
+
+            int remaining = item.getAmount();
             while (remaining > 0) {
-                int give = (int) Math.min(remaining, 64);
-                ItemStack stack = new ItemStack(entry.getKey(), give);
+                int give = Math.min(remaining, item.getMaxStackSize());
+                ItemStack stack = item.clone();
+                stack.setAmount(give);
                 Map<Integer, ItemStack> overflow = player.getInventory().addItem(stack);
                 for (ItemStack leftover : overflow.values()) {
                     player.getWorld().dropItemNaturally(player.getLocation(), leftover);
@@ -178,51 +348,87 @@ public class SpawnerStackManager implements Listener {
                 remaining -= give;
             }
         }
-        accumulatedDrops.put(locKey, new HashMap<>());
+
+        accumulatedItems.put(locKey, new ArrayList<>());
         save();
         player.sendMessage("§a§l(!) §aCollected all items!");
     }
 
     public void dropAll(String locKey, Player player) {
-        Map<Material, Long> drops = accumulatedDrops.get(locKey);
-        if (drops == null || drops.isEmpty()) {
+        List<ItemStack> items = accumulatedItems.get(locKey);
+        if (items == null || items.isEmpty()) {
             player.sendMessage("§c§l(!) §cNo items to drop.");
             return;
         }
-        for (Map.Entry<Material, Long> entry : drops.entrySet()) {
-            long remaining = entry.getValue();
+
+        for (ItemStack item : items) {
+            if (item == null || item.getAmount() <= 0) continue;
+
+            int remaining = item.getAmount();
             while (remaining > 0) {
-                int give = (int) Math.min(remaining, 64);
-                ItemStack stack = new ItemStack(entry.getKey(), give);
+                int give = Math.min(remaining, item.getMaxStackSize());
+                ItemStack stack = item.clone();
+                stack.setAmount(give);
                 player.getWorld().dropItemNaturally(player.getLocation(), stack);
                 remaining -= give;
             }
         }
-        accumulatedDrops.put(locKey, new HashMap<>());
+
+        accumulatedItems.put(locKey, new ArrayList<>());
         save();
         player.sendMessage("§a§l(!) §aDropped all items!");
     }
 
     /**
-     * Called by MobStackManager when a mob from this spawner dies in ECO mode.
-     * Adds the drops to virtual storage instead of dropping them on the ground.
+     * Called by the spawn timer when spawner is in ECO mode.
+     * Adds the drops to virtual storage with full ItemStack metadata.
      */
     public void accumulateDrops(String locKey, List<ItemStack> drops) {
-        Map<Material, Long> storage = accumulatedDrops.computeIfAbsent(locKey, k -> new HashMap<>());
+        List<ItemStack> storage = accumulatedItems.computeIfAbsent(locKey, k -> new ArrayList<>());
+
         for (ItemStack drop : drops) {
-            if (drop == null) continue;
-            storage.merge(drop.getType(), (long) drop.getAmount(), Long::sum);
+            if (drop == null || drop.getAmount() <= 0) continue;
+
+            // Try to merge with existing similar item
+            boolean merged = false;
+            for (ItemStack existing : storage) {
+                if (existing.isSimilar(drop)) {
+                    existing.setAmount(existing.getAmount() + drop.getAmount());
+                    merged = true;
+                    break;
+                }
+            }
+
+            if (!merged) {
+                storage.add(drop.clone());
+            }
         }
+
         save();
     }
 
     /**
-     * Called by MobStackManager when a mob from this spawner dies in XP mode.
-     * Accumulates XP over time based on stack count.
+     * Called by the spawn timer when spawner is in XP mode.
+     * Accumulates XP over time.
      */
-    public void accumulateXP(String locKey, long amount) {
-        accumulatedXP.merge(locKey, amount, Long::sum);
+    public void accumulateXP(String locKey, double amount) {
+        accumulatedXP.merge(locKey, amount, Double::sum);
         save();
+    }
+
+    // -------------------------------------------------------------------------
+    // Event: cancel vanilla spawner spawns for our tracked spawners
+    // -------------------------------------------------------------------------
+
+    @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = false)
+    public void onSpawnerSpawn(SpawnerSpawnEvent event) {
+        Block spawnerBlock = event.getSpawner().getBlock();
+        String locKey = locKey(spawnerBlock.getLocation());
+
+        // If this is one of our tracked spawners, cancel the vanilla spawn
+        if (stackCounts.containsKey(locKey)) {
+            event.setCancelled(true);
+        }
     }
 
     // -------------------------------------------------------------------------
@@ -307,6 +513,11 @@ public class SpawnerStackManager implements Listener {
         // Apply entity type and persist both keys on the tile entity.
         CreatureSpawner cs = (CreatureSpawner) placed.getState();
         cs.setSpawnedType(type);
+        // Disable vanilla spawner spawning by setting delay to max value
+        // IMPORTANT: Set max BEFORE min to satisfy precondition (min <= max)
+        cs.setMaxSpawnDelay(Integer.MAX_VALUE);
+        cs.setMinSpawnDelay(Integer.MAX_VALUE);
+        cs.setDelay(Integer.MAX_VALUE);
         PersistentDataContainer blockPdc = cs.getPersistentDataContainer();
         blockPdc.set(SPAWNER_TYPE_KEY, PersistentDataType.STRING, type.name());
         if (count > 1) {
@@ -405,55 +616,22 @@ public class SpawnerStackManager implements Listener {
                 removeLabel(locKey);
                 return;
             }
-            // Search nearby (not just the spawner's chunk) for an existing stack leader.
-            // Using a proximity search rather than getChunk().getEntities() prevents
-            // a false "no leader found" when the entity spawned near a chunk boundary
-            // and ended up in the adjacent chunk due to jitter.
-            LivingEntity existingLeader = null;
-            for (org.bukkit.entity.Entity e : loc.getWorld()
-                    .getNearbyEntities(loc.clone().add(0.5, 0.5, 0.5), 8, 8, 8)) {
-                if (!(e instanceof LivingEntity le)) continue;
-                if (e.getType() != type || !le.isValid() || le.isDead()) continue;
-                if (!le.getPersistentDataContainer().has(MOB_STACK_KEY, PersistentDataType.INTEGER)) continue;
-                existingLeader = le;
-                break;
-            }
-            if (existingLeader != null) {
-                // Stack exists — grow it by stackCount without spawning new entities.
-                int current = existingLeader.getPersistentDataContainer()
-                        .getOrDefault(MOB_STACK_KEY, PersistentDataType.INTEGER, 1);
-                int next = Math.min(current + stackCount, 9999);
-                existingLeader.getPersistentDataContainer()
-                        .set(MOB_STACK_KEY, PersistentDataType.INTEGER, next);
-                existingLeader.setCustomName("§b§l" + formatMobName(type) + " §f§lx§6§l" + next);
-                existingLeader.setCustomNameVisible(true);
-                // Ensure the leader knows which spawner it came from.
-                if (!existingLeader.getPersistentDataContainer().has(SPAWNER_LOC_KEY, PersistentDataType.STRING)) {
-                    existingLeader.getPersistentDataContainer().set(SPAWNER_LOC_KEY, PersistentDataType.STRING, locKey);
-                }
+
+            // Get spawner mode
+            String mode = getBlockMode(block);
+
+            if ("XP".equals(mode)) {
+                // XP mode: accumulate XP directly without spawning
+                // Stack count = number of mobs, so multiply XP
+                double xpPerMob = spawnerConfig.getXpPerMob();
+                accumulateXP(locKey, xpPerMob * stackCount);
             } else {
-                // No stack yet — defer to the next tick so MobStackManager's
-                // CreatureSpawnEvent handler finishes registering the entity as a
-                // leader (size 1) before we override the PDC with stackCount.
-                plugin.getServer().getScheduler().runTask(plugin, () -> {
-                    // Re-check the block is still a spawner before spawning.
-                    if (loc.getBlock().getType() != Material.SPAWNER) return;
-                    org.bukkit.entity.Entity spawned = loc.getWorld().spawnEntity(
-                            jitterLocation(loc),
-                            type,
-                            org.bukkit.event.entity.CreatureSpawnEvent.SpawnReason.SPAWNER
-                    );
-                    if (spawned instanceof LivingEntity le) {
-                        // Tag with source spawner so death handler can look up the mode.
-                        le.getPersistentDataContainer().set(SPAWNER_LOC_KEY, PersistentDataType.STRING, locKey);
-                        if (stackCount > 1) {
-                            le.getPersistentDataContainer()
-                                    .set(MOB_STACK_KEY, PersistentDataType.INTEGER, stackCount);
-                            le.setCustomName("§b§l" + formatMobName(type) + " §f§lx§6§l" + stackCount);
-                            le.setCustomNameVisible(true);
-                        }
-                    }
-                });
+                // ECO mode: accumulate drops directly without spawning
+                // Stack count = number of mobs, so get drops for all of them
+                List<ItemStack> mobDrops = getDropsForMob(type, stackCount);
+                if (!mobDrops.isEmpty()) {
+                    accumulateDrops(locKey, mobDrops);
+                }
             }
         }, periodTicks, periodTicks);
 
@@ -526,16 +704,20 @@ public class SpawnerStackManager implements Listener {
             config.set(base + ".type",  type.name());
             config.set(base + ".count", count);
 
-            // Save accumulated drops
-            Map<Material, Long> drops = accumulatedDrops.get(locKey);
-            if (drops != null && !drops.isEmpty()) {
-                for (Map.Entry<Material, Long> dropEntry : drops.entrySet()) {
-                    config.set(base + ".drops." + dropEntry.getKey().name(), dropEntry.getValue());
+            // Save accumulated items as serialized ItemStacks
+            List<ItemStack> items = accumulatedItems.get(locKey);
+            if (items != null && !items.isEmpty()) {
+                List<Map<String, Object>> serializedItems = new ArrayList<>();
+                for (ItemStack item : items) {
+                    if (item != null && item.getAmount() > 0) {
+                        serializedItems.add(item.serialize());
+                    }
                 }
+                config.set(base + ".items", serializedItems);
             }
 
             // Save accumulated XP
-            Long xp = accumulatedXP.get(locKey);
+            Double xp = accumulatedXP.get(locKey);
             if (xp != null && xp > 0) {
                 config.set(base + ".xp", xp);
             }
@@ -604,26 +786,29 @@ public class SpawnerStackManager implements Listener {
             stackCounts.put(locKey, count);
             stackTypes.put(locKey, type);
 
-            // Load accumulated drops
-            ConfigurationSection dropsSection = sec.getConfigurationSection("drops");
-            if (dropsSection != null) {
-                Map<Material, Long> drops = new HashMap<>();
-                for (String matName : dropsSection.getKeys(false)) {
-                    try {
-                        Material mat = Material.valueOf(matName);
-                        long amount = dropsSection.getLong(matName);
-                        drops.put(mat, amount);
-                    } catch (IllegalArgumentException e) {
-                        plugin.getLogger().warning("spawner-data.yml: unknown material '" + matName + "' in drops");
+            // Load accumulated items (serialized ItemStacks)
+            List<?> serializedItems = sec.getList("items");
+            if (serializedItems != null && !serializedItems.isEmpty()) {
+                List<ItemStack> items = new ArrayList<>();
+                for (Object obj : serializedItems) {
+                    if (obj instanceof Map) {
+                        try {
+                            @SuppressWarnings("unchecked")
+                            Map<String, Object> itemMap = (Map<String, Object>) obj;
+                            ItemStack item = ItemStack.deserialize(itemMap);
+                            items.add(item);
+                        } catch (Exception e) {
+                            plugin.getLogger().warning("Failed to deserialize item: " + e.getMessage());
+                        }
                     }
                 }
-                if (!drops.isEmpty()) {
-                    accumulatedDrops.put(locKey, drops);
+                if (!items.isEmpty()) {
+                    accumulatedItems.put(locKey, items);
                 }
             }
 
             // Load accumulated XP
-            long xp = sec.getLong("xp", 0);
+            double xp = sec.getDouble("xp", 0.0);
             if (xp > 0) {
                 accumulatedXP.put(locKey, xp);
             }

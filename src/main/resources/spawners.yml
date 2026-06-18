@@ -9,6 +9,12 @@
 # Maximum number of spawners that can be combined into one stack
 stack-max: 50
 
+# XP amount awarded per mob when spawner is in XP mode
+# Each spawn cycle gives this amount of XP (not multiplied by stack count)
+# Supports decimal values for fine-tuned rates
+# Example: With xp-per-mob: 0.25, you need 4 spawn cycles to get 1 XP
+xp-per-mob: 0.25
+
 # Spawn interval in seconds per mob type.
 # If a mob type is not listed, the 'default' value is used.
 # Minimum effective value: 0.05 (1 tick).

@@ -5,6 +5,7 @@ import net.kyori.adventure.text.serializer.legacy.LegacyComponentSerializer;
 import org.bukkit.Bukkit;
 import org.bukkit.Location;
 import org.bukkit.Material;
+import org.bukkit.configuration.ConfigurationSection;
 import org.bukkit.entity.Player;
 import org.bukkit.inventory.Inventory;
 import org.bukkit.inventory.InventoryHolder;
@@ -14,6 +15,7 @@ import org.bukkit.inventory.meta.ItemMeta;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * 54-slot paginated storage GUI showing accumulated drops.
@@ -24,15 +26,27 @@ public class SpawnerStorageGUI implements InventoryHolder {
     private final Inventory inventory;
     private final int page;
     private final SpawnerStackManager manager;
+    private final MobsConfig mobsConfig;
 
-    private SpawnerStorageGUI(Location spawnerLocation, SpawnerStackManager manager, int page) {
+    // Head materials that should be displayed with special formatting
+    private static final Set<Material> SKULL_MATERIALS = Set.of(
+            Material.PLAYER_HEAD,
+            Material.ZOMBIE_HEAD,
+            Material.SKELETON_SKULL,
+            Material.WITHER_SKELETON_SKULL,
+            Material.CREEPER_HEAD,
+            Material.PIGLIN_HEAD,
+            Material.DRAGON_HEAD
+    );
+
+    private SpawnerStorageGUI(Location spawnerLocation, SpawnerStackManager manager, int page, MobsConfig mobsConfig) {
         this.spawnerLocation = spawnerLocation;
         this.manager = manager;
         this.page = page;
+        this.mobsConfig = mobsConfig;
 
         String locKey = manager.locKey(spawnerLocation);
-        Map<Material, Long> drops = manager.getAccumulatedDrops(locKey);
-        List<Map.Entry<Material, Long>> itemList = drops == null ? new ArrayList<>() : new ArrayList<>(drops.entrySet());
+        List<ItemStack> itemList = manager.getAccumulatedItems(locKey);
 
         int totalPages = Math.max(1, (int) Math.ceil(itemList.size() / 45.0));
 
@@ -40,16 +54,36 @@ public class SpawnerStorageGUI implements InventoryHolder {
                 .deserialize("§8Spawner Storage §7— Page " + page + "/" + totalPages);
         this.inventory = Bukkit.createInventory(this, 54, title);
 
-        // Slots 0-44: paginated items
+        // Slots 0-44: paginated items (now using actual ItemStacks with metadata)
         int startIndex = (page - 1) * 45;
         for (int i = 0; i < 45 && startIndex + i < itemList.size(); i++) {
-            Map.Entry<Material, Long> entry = itemList.get(startIndex + i);
-            ItemStack item = new ItemStack(entry.getKey());
-            ItemMeta meta = item.getItemMeta();
-            meta.displayName(LegacyComponentSerializer.legacySection()
-                    .deserialize("§f" + formatMaterial(entry.getKey()) + " §7x" + entry.getValue()));
-            item.setItemMeta(meta);
-            inventory.setItem(i, item);
+            ItemStack storedItem = itemList.get(startIndex + i);
+            if (storedItem == null) continue;
+
+            ItemStack displayItem = storedItem.clone();
+            ItemMeta meta = displayItem.getItemMeta();
+            if (meta == null) continue;
+
+            // Special formatting for heads
+            if (SKULL_MATERIALS.contains(storedItem.getType())) {
+                // The head already has proper texture from DropHeads
+                // Just add price lore
+                String mobType = getMobTypeFromSpawner(locKey);
+                double price = getPriceForMob(mobType);
+                double totalWorth = price * storedItem.getAmount();
+
+                List<Component> lore = new ArrayList<>();
+                if (price > 0) {
+                    lore.add(LegacyComponentSerializer.legacySection()
+                            .deserialize("§7Price: §a$" + String.format("%.2f", price) + " §7each"));
+                    lore.add(LegacyComponentSerializer.legacySection()
+                            .deserialize("§7Total Worth: §a$" + String.format("%.2f", totalWorth)));
+                }
+                meta.lore(lore);
+            }
+
+            displayItem.setItemMeta(meta);
+            inventory.setItem(i, displayItem);
         }
 
         // Slot 45: Back (Barrier)
@@ -120,8 +154,8 @@ public class SpawnerStorageGUI implements InventoryHolder {
         return inventory;
     }
 
-    public static void open(Player player, Location spawnerLoc, SpawnerStackManager manager, int page) {
-        player.openInventory(new SpawnerStorageGUI(spawnerLoc, manager, page).inventory);
+    public static void open(Player player, Location spawnerLoc, SpawnerStackManager manager, int page, MobsConfig mobsConfig) {
+        player.openInventory(new SpawnerStorageGUI(spawnerLoc, manager, page, mobsConfig).inventory);
     }
 
     private static String formatMaterial(Material material) {
@@ -135,5 +169,23 @@ public class SpawnerStorageGUI implements InventoryHolder {
             }
         }
         return sb.toString().trim();
+    }
+
+    /**
+     * Gets the mob type from the spawner itself.
+     */
+    private String getMobTypeFromSpawner(String locKey) {
+        org.bukkit.entity.EntityType type = manager.getSpawnerType(locKey);
+        return type != null ? type.name() : null;
+    }
+
+    /**
+     * Gets the sell price for a mob from mobs.yml.
+     */
+    private double getPriceForMob(String mobKey) {
+        if (mobKey == null || mobsConfig == null) return 0;
+        ConfigurationSection mobSection = mobsConfig.getMobSection(mobKey);
+        if (mobSection == null) return 0;
+        return mobSection.getDouble("sell_price", 0);
     }
 }

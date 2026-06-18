@@ -32,7 +32,7 @@ public class SpawnerMainListener implements Listener {
 
         switch (raw) {
             case 11 -> // Open Storage
-                    SpawnerStorageGUI.open(player, loc, spawnerStackManager, 1);
+                    SpawnerStorageGUI.open(player, loc, spawnerStackManager, 1, spawnerStackManager.getMobsConfig());
             case 15 -> { // Collect XP
                 spawnerStackManager.collectXP(locKey, player);
                 player.closeInventory();

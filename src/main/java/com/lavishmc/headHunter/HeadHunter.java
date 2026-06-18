@@ -72,7 +72,7 @@ public final class HeadHunter extends DropHeads {
                 new HeadSellListener(this, economy, playerDataManager,
                         mobsConfig, messagesConfig, sidebarConfig), this);
         getServer().getPluginManager().registerEvents(new SunlightProtectionListener(), this);
-        spawnerStackManager = new SpawnerStackManager(this, spawnerConfig, mobsConfig);
+        spawnerStackManager = new SpawnerStackManager(this, spawnerConfig, mobsConfig, economy);
         getServer().getPluginManager().registerEvents(spawnerStackManager, this);
         getServer().getPluginManager().registerEvents(new SpawnerModeListener(spawnerStackManager), this);
         getServer().getPluginManager().registerEvents(new SpawnerMainListener(spawnerStackManager), this);

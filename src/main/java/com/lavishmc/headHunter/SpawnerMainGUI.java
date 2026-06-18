@@ -54,18 +54,24 @@ public class SpawnerMainGUI implements InventoryHolder {
         storageMeta.displayName(LegacyComponentSerializer.legacySection().deserialize("§6Open Storage"));
         List<Component> storageLore = new ArrayList<>();
         if ("ECO".equals(mode)) {
-            Map<Material, Long> drops = manager.getAccumulatedDrops(locKey);
-            if (drops == null || drops.isEmpty()) {
+            List<ItemStack> items = manager.getAccumulatedItems(locKey);
+            if (items == null || items.isEmpty()) {
                 storageLore.add(LegacyComponentSerializer.legacySection().deserialize("§7Empty"));
             } else {
-                long total = drops.values().stream().mapToLong(Long::longValue).sum();
+                long total = items.stream().mapToLong(ItemStack::getAmount).sum();
                 storageLore.add(LegacyComponentSerializer.legacySection().deserialize("§7Total items: §b" + total));
-                // Show top 2 items
-                drops.entrySet().stream()
-                        .sorted((a, b) -> Long.compare(b.getValue(), a.getValue()))
+                // Show top 2 item types
+                items.stream()
+                        .sorted((a, b) -> Long.compare(b.getAmount(), a.getAmount()))
                         .limit(2)
-                        .forEach(e -> storageLore.add(LegacyComponentSerializer.legacySection()
-                                .deserialize("§8• §f" + formatMaterial(e.getKey()) + " §7x" + e.getValue())));
+                        .forEach(item -> {
+                            String name = item.hasItemMeta() && item.getItemMeta().hasDisplayName()
+                                    ? net.kyori.adventure.text.serializer.plain.PlainTextComponentSerializer.plainText()
+                                        .serialize(item.getItemMeta().displayName())
+                                    : formatMaterial(item.getType());
+                            storageLore.add(LegacyComponentSerializer.legacySection()
+                                    .deserialize("§8• §f" + name + " §7x" + item.getAmount()));
+                        });
             }
         } else {
             storageLore.add(LegacyComponentSerializer.legacySection().deserialize("§7Empty (XP mode)"));
@@ -74,8 +80,11 @@ public class SpawnerMainGUI implements InventoryHolder {
         storage.setItemMeta(storageMeta);
         inventory.setItem(11, storage);
 
-        // Slot 13 — Spawner info (mob head)
-        ItemStack spawnerInfo = new ItemStack(getMobHeadMaterial(type));
+        // Slot 13 — Spawner info (mob head from DropHeads API)
+        ItemStack spawnerInfo = manager.getMobHead(type);
+        if (spawnerInfo == null) {
+            spawnerInfo = new ItemStack(getMobHeadMaterial(type));
+        }
         ItemMeta spawnerMeta = spawnerInfo.getItemMeta();
         String mobName = formatMobName(type);
         spawnerMeta.displayName(LegacyComponentSerializer.legacySection()
@@ -91,8 +100,8 @@ public class SpawnerMainGUI implements InventoryHolder {
         ItemMeta xpMeta = xpBottle.getItemMeta();
         xpMeta.displayName(LegacyComponentSerializer.legacySection().deserialize("§aCollect XP"));
         List<Component> xpLore = new ArrayList<>();
-        long accumulatedXP = manager.getAccumulatedXP(locKey);
-        xpLore.add(LegacyComponentSerializer.legacySection().deserialize("§7Accumulated: §b" + accumulatedXP + " XP"));
+        double accumulatedXP = manager.getAccumulatedXP(locKey);
+        xpLore.add(LegacyComponentSerializer.legacySection().deserialize("§7Accumulated: §b" + String.format("%.2f", accumulatedXP) + " XP"));
         xpMeta.lore(xpLore);
         xpBottle.setItemMeta(xpMeta);
         inventory.setItem(15, xpBottle);
