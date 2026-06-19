@@ -72,12 +72,6 @@ commands:
     permission: headhunter.basic
     permission-message: You do not have permission to use this command.
 
-  hhtop:
-    description: Display HeadHunter leaderboard
-    usage: /hhtop [page]
-    permission: headhunter.basic
-    permission-message: You do not have permission to use this command.
-
   testlevelup:
     description: Preview rank-up visual effects without changing level
     usage: /testlevelup

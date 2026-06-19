@@ -38,10 +38,14 @@ public class SpawnerStorageListener implements Listener {
                 spawnerStackManager.collectAll(locKey, player);
                 player.closeInventory();
             }
-            case 48 -> // Previous Page
+            case 48 -> { // Previous Page
+                if (currentPage > 1) {
                     SpawnerStorageGUI.open(player, loc, spawnerStackManager, currentPage - 1, spawnerStackManager.getMobsConfig());
-            case 50 -> // Next Page
-                    SpawnerStorageGUI.open(player, loc, spawnerStackManager, currentPage + 1, spawnerStackManager.getMobsConfig());
+                }
+            }
+            case 50 -> { // Next Page
+                SpawnerStorageGUI.open(player, loc, spawnerStackManager, currentPage + 1, spawnerStackManager.getMobsConfig());
+            }
             case 52 -> { // Drop All
                 spawnerStackManager.dropAll(locKey, player);
                 player.closeInventory();

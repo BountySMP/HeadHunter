@@ -155,7 +155,14 @@ public class SpawnerStorageGUI implements InventoryHolder {
     }
 
     public static void open(Player player, Location spawnerLoc, SpawnerStackManager manager, int page, MobsConfig mobsConfig) {
-        player.openInventory(new SpawnerStorageGUI(spawnerLoc, manager, page, mobsConfig).inventory);
+        String locKey = manager.locKey(spawnerLoc);
+        List<ItemStack> itemList = manager.getAccumulatedItems(locKey);
+        int totalPages = Math.max(1, (int) Math.ceil(itemList.size() / 45.0));
+
+        // Clamp page number to valid range [1, totalPages]
+        int clampedPage = Math.max(1, Math.min(page, totalPages));
+
+        player.openInventory(new SpawnerStorageGUI(spawnerLoc, manager, clampedPage, mobsConfig).inventory);
     }
 
     private static String formatMaterial(Material material) {

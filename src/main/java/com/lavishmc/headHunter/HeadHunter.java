@@ -183,12 +183,6 @@ public final class HeadHunter extends DropHeads {
         getServer().getPluginManager().registerEvents(
                 new SpawnerShopListener(mobsConfig, playerDataManager, economy), this);
 
-        // /hhtop
-        Objects.requireNonNull(getCommand("hhtop")).setExecutor(
-                new HHTopCommand(playerDataManager));
-        getServer().getPluginManager().registerEvents(
-                new HHTopListener(playerDataManager), this);
-
         // PlaceholderAPI integration
         if (getServer().getPluginManager().getPlugin("PlaceholderAPI") != null) {
             new HeadHunterExpansion(this, playerDataManager, mobsConfig).register();

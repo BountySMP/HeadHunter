@@ -393,14 +393,42 @@ public class SpawnerStackManager implements Listener {
             boolean merged = false;
             for (ItemStack existing : storage) {
                 if (existing.isSimilar(drop)) {
-                    existing.setAmount(existing.getAmount() + drop.getAmount());
+                    long totalAmount = (long) existing.getAmount() + drop.getAmount();
+                    int maxStackSize = existing.getType().getMaxStackSize();
+
+                    // If total exceeds max stack size, cap existing and add overflow as new stack(s)
+                    if (totalAmount > maxStackSize) {
+                        existing.setAmount(maxStackSize);
+                        long overflow = totalAmount - maxStackSize;
+
+                        // Add overflow as additional stacks
+                        while (overflow > 0) {
+                            ItemStack overflowStack = drop.clone();
+                            int stackAmount = (int) Math.min(overflow, maxStackSize);
+                            overflowStack.setAmount(stackAmount);
+                            storage.add(overflowStack);
+                            overflow -= stackAmount;
+                        }
+                    } else {
+                        existing.setAmount((int) totalAmount);
+                    }
                     merged = true;
                     break;
                 }
             }
 
             if (!merged) {
-                storage.add(drop.clone());
+                // Split into multiple stacks if amount exceeds max stack size
+                int maxStackSize = drop.getType().getMaxStackSize();
+                int remaining = drop.getAmount();
+
+                while (remaining > 0) {
+                    ItemStack stack = drop.clone();
+                    int stackAmount = Math.min(remaining, maxStackSize);
+                    stack.setAmount(stackAmount);
+                    storage.add(stack);
+                    remaining -= stackAmount;
+                }
             }
         }
 
@@ -710,7 +738,25 @@ public class SpawnerStackManager implements Listener {
                 List<Map<String, Object>> serializedItems = new ArrayList<>();
                 for (ItemStack item : items) {
                     if (item != null && item.getAmount() > 0) {
-                        serializedItems.add(item.serialize());
+                        int maxStackSize = item.getType().getMaxStackSize();
+                        int amount = item.getAmount();
+
+                        // Split oversized stacks into multiple valid stacks for serialization
+                        if (amount > maxStackSize) {
+                            int remaining = amount;
+                            while (remaining > 0) {
+                                ItemStack splitStack = item.clone();
+                                int stackAmount = Math.min(remaining, maxStackSize);
+                                splitStack.setAmount(stackAmount);
+                                serializedItems.add(splitStack.serialize());
+                                remaining -= stackAmount;
+                            }
+                        } else {
+                            // Clamp to max stack size as safety (should not exceed but guard against edge cases)
+                            ItemStack safeStack = item.clone();
+                            safeStack.setAmount(Math.min(amount, maxStackSize));
+                            serializedItems.add(safeStack.serialize());
+                        }
                     }
                 }
                 config.set(base + ".items", serializedItems);
