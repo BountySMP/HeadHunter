@@ -1,6 +1,7 @@
 package com.lavishmc.headHunter;
 
 import net.kyori.adventure.text.Component;
+import net.kyori.adventure.text.format.TextDecoration;
 import net.kyori.adventure.text.serializer.legacy.LegacyComponentSerializer;
 import org.bukkit.Bukkit;
 import org.bukkit.Location;
@@ -51,15 +52,15 @@ public class SpawnerMainGUI implements InventoryHolder {
         // Slot 11 — Storage (Chest)
         ItemStack storage = new ItemStack(Material.CHEST);
         ItemMeta storageMeta = storage.getItemMeta();
-        storageMeta.displayName(LegacyComponentSerializer.legacySection().deserialize("§6Open Storage"));
+        storageMeta.displayName(lc("§6Open Storage"));
         List<Component> storageLore = new ArrayList<>();
         if ("ECO".equals(mode)) {
             List<ItemStack> items = manager.getAccumulatedItems(locKey);
             if (items == null || items.isEmpty()) {
-                storageLore.add(LegacyComponentSerializer.legacySection().deserialize("§7Empty"));
+                storageLore.add(lc("§7Empty"));
             } else {
                 long total = items.stream().mapToLong(ItemStack::getAmount).sum();
-                storageLore.add(LegacyComponentSerializer.legacySection().deserialize("§7Total items: §b" + total));
+                storageLore.add(lc("§7Total items: §b" + total));
                 // Show top 2 item types
                 items.stream()
                         .sorted((a, b) -> Long.compare(b.getAmount(), a.getAmount()))
@@ -69,12 +70,11 @@ public class SpawnerMainGUI implements InventoryHolder {
                                     ? net.kyori.adventure.text.serializer.plain.PlainTextComponentSerializer.plainText()
                                         .serialize(item.getItemMeta().displayName())
                                     : formatMaterial(item.getType());
-                            storageLore.add(LegacyComponentSerializer.legacySection()
-                                    .deserialize("§8• §f" + name + " §7x" + item.getAmount()));
+                            storageLore.add(lc("§8• §f" + name + " §7x" + item.getAmount()));
                         });
             }
         } else {
-            storageLore.add(LegacyComponentSerializer.legacySection().deserialize("§7Empty (XP mode)"));
+            storageLore.add(lc("§7Empty (XP mode)"));
         }
         storageMeta.lore(storageLore);
         storage.setItemMeta(storageMeta);
@@ -87,10 +87,9 @@ public class SpawnerMainGUI implements InventoryHolder {
         }
         ItemMeta spawnerMeta = spawnerInfo.getItemMeta();
         String mobName = formatMobName(type);
-        spawnerMeta.displayName(LegacyComponentSerializer.legacySection()
-                .deserialize("§e" + count + "x " + mobName + " Spawner"));
+        spawnerMeta.displayName(lc("§e" + count + "x " + mobName + " Spawner"));
         List<Component> spawnerLore = new ArrayList<>();
-        spawnerLore.add(LegacyComponentSerializer.legacySection().deserialize("§7Mode: " + (mode.equals("XP") ? "§a§lXP" : "§6§lECO")));
+        spawnerLore.add(lc("§7Mode: " + (mode.equals("XP") ? "§a§lXP" : "§6§lECO")));
         spawnerMeta.lore(spawnerLore);
         spawnerInfo.setItemMeta(spawnerMeta);
         inventory.setItem(13, spawnerInfo);
@@ -98,10 +97,10 @@ public class SpawnerMainGUI implements InventoryHolder {
         // Slot 15 — XP Collection (Experience Bottle)
         ItemStack xpBottle = new ItemStack(Material.EXPERIENCE_BOTTLE);
         ItemMeta xpMeta = xpBottle.getItemMeta();
-        xpMeta.displayName(LegacyComponentSerializer.legacySection().deserialize("§aCollect XP"));
+        xpMeta.displayName(lc("§aCollect XP"));
         List<Component> xpLore = new ArrayList<>();
         double accumulatedXP = manager.getAccumulatedXP(locKey);
-        xpLore.add(LegacyComponentSerializer.legacySection().deserialize("§7Accumulated: §b" + String.format("%.2f", accumulatedXP) + " XP"));
+        xpLore.add(lc("§7Accumulated: §b" + String.format("%.2f", accumulatedXP) + " XP"));
         xpMeta.lore(xpLore);
         xpBottle.setItemMeta(xpMeta);
         inventory.setItem(15, xpBottle);
@@ -109,10 +108,9 @@ public class SpawnerMainGUI implements InventoryHolder {
         // Slot 22 — Change Mode (Redstone)
         ItemStack changeMode = new ItemStack(Material.REDSTONE);
         ItemMeta modeMeta = changeMode.getItemMeta();
-        modeMeta.displayName(LegacyComponentSerializer.legacySection().deserialize("§cChange Mode"));
+        modeMeta.displayName(lc("§cChange Mode"));
         List<Component> modeLore = new ArrayList<>();
-        modeLore.add(LegacyComponentSerializer.legacySection()
-                .deserialize("§7Current: " + (mode.equals("XP") ? "§a§lXP" : "§6§lECO")));
+        modeLore.add(lc("§7Current: " + (mode.equals("XP") ? "§a§lXP" : "§6§lECO")));
         modeMeta.lore(modeLore);
         changeMode.setItemMeta(modeMeta);
         inventory.setItem(22, changeMode);
@@ -162,6 +160,11 @@ public class SpawnerMainGUI implements InventoryHolder {
             }
         }
         return sb.toString().trim();
+    }
+
+    private static Component lc(String legacyText) {
+        return LegacyComponentSerializer.legacySection().deserialize(legacyText)
+                .decoration(TextDecoration.ITALIC, false);
     }
 
     private static String formatMaterial(Material material) {

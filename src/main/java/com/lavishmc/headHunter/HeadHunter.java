@@ -56,7 +56,6 @@ public final class HeadHunter extends DropHeads {
         // ── Config objects ────────────────────────────────────────────────────
         MobsConfig     mobsConfig     = new MobsConfig(this);
         SpawnerConfig  spawnerConfig  = new SpawnerConfig(this);
-        SidebarConfig  sidebarConfig  = new SidebarConfig(this);
         MessagesConfig messagesConfig = new MessagesConfig(this);
 
         playerDataManager = new PlayerDataManager(this, mobsConfig);
@@ -70,9 +69,10 @@ public final class HeadHunter extends DropHeads {
                 new HeadLoreListener(mobsConfig), this);
         getServer().getPluginManager().registerEvents(
                 new HeadSellListener(this, economy, playerDataManager,
-                        mobsConfig, messagesConfig, sidebarConfig), this);
+                        mobsConfig, messagesConfig), this);
         getServer().getPluginManager().registerEvents(new SunlightProtectionListener(), this);
         spawnerStackManager = new SpawnerStackManager(this, spawnerConfig, mobsConfig, economy);
+        spawnerStackManager.setPlayerDataManager(playerDataManager);
         getServer().getPluginManager().registerEvents(spawnerStackManager, this);
         getServer().getPluginManager().registerEvents(new SpawnerModeListener(spawnerStackManager), this);
         getServer().getPluginManager().registerEvents(new SpawnerMainListener(spawnerStackManager), this);
@@ -80,7 +80,6 @@ public final class HeadHunter extends DropHeads {
         // Link managers so MobStackManager can accumulate drops
         mobStackManager.setSpawnerStackManager(spawnerStackManager);
 
-        new SidebarManager(this, playerDataManager, economy, sidebarConfig).start();
 
         // /hhdebug
         CommandExecutor hhDebug = (sender, command, label, args) -> {
@@ -123,12 +122,12 @@ public final class HeadHunter extends DropHeads {
 
         // /rankup
         RankUpCommand rankUpCommand = new RankUpCommand(
-                this, playerDataManager, economy, messagesConfig, sidebarConfig);
+                this, playerDataManager, economy, messagesConfig);
         getServer().getPluginManager().registerEvents(rankUpCommand, this);
 
         // /hh
         HHAdminCommand hhAdmin = new HHAdminCommand(this, playerDataManager, economy,
-                mobsConfig, spawnerConfig, sidebarConfig, messagesConfig, rankUpCommand);
+                mobsConfig, spawnerConfig, messagesConfig, rankUpCommand);
         Objects.requireNonNull(getCommand("hh")).setExecutor(hhAdmin);
         Objects.requireNonNull(getCommand("hh")).setTabCompleter(hhAdmin);
         Objects.requireNonNull(getCommand("rankup")).setExecutor(rankUpCommand);

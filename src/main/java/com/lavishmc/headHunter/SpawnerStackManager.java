@@ -84,6 +84,7 @@ public class SpawnerStackManager implements Listener {
     private final MobsConfig mobsConfig;
     private final int maxStack;
     private final net.milkbowl.vault.economy.Economy economy;
+    private PlayerDataManager playerData;
 
     /** Location string → active BukkitTask for that spawner. */
     private final Map<String, BukkitTask> tasks = new HashMap<>();
@@ -107,6 +108,10 @@ public class SpawnerStackManager implements Listener {
         this.maxStack       = spawnerConfig.getStackMax();
         this.economy        = economy;
         load();
+    }
+
+    public void setPlayerDataManager(PlayerDataManager pdm) {
+        this.playerData = pdm;
     }
 
     /**
@@ -147,29 +152,35 @@ public class SpawnerStackManager implements Listener {
             }
             case COW -> {
                 drops.add(new ItemStack(Material.BEEF, count * (1 + (int)(Math.random() * 2))));
-                drops.add(new ItemStack(Material.LEATHER, count * (int)(Math.random() * 3)));
+                int leather = count * (int)(Math.random() * 3);
+                if (leather > 0) drops.add(new ItemStack(Material.LEATHER, leather));
             }
             case CHICKEN -> {
                 drops.add(new ItemStack(Material.CHICKEN, count));
-                drops.add(new ItemStack(Material.FEATHER, count * (int)(Math.random() * 3)));
+                int feather = count * (int)(Math.random() * 3);
+                if (feather > 0) drops.add(new ItemStack(Material.FEATHER, feather));
             }
             case SHEEP -> {
                 drops.add(new ItemStack(Material.MUTTON, count * (1 + (int)(Math.random() * 2))));
-                // Wool would need to check sheep color
                 drops.add(new ItemStack(Material.WHITE_WOOL, count));
             }
             case ZOMBIE -> {
-                drops.add(new ItemStack(Material.ROTTEN_FLESH, count * (int)(Math.random() * 3)));
+                int flesh = count * (int)(Math.random() * 3);
+                if (flesh > 0) drops.add(new ItemStack(Material.ROTTEN_FLESH, flesh));
             }
             case SKELETON -> {
-                drops.add(new ItemStack(Material.BONE, count * (int)(Math.random() * 3)));
-                drops.add(new ItemStack(Material.ARROW, count * (int)(Math.random() * 3)));
+                int bone = count * (int)(Math.random() * 3);
+                if (bone > 0) drops.add(new ItemStack(Material.BONE, bone));
+                int arrow = count * (int)(Math.random() * 3);
+                if (arrow > 0) drops.add(new ItemStack(Material.ARROW, arrow));
             }
             case CREEPER -> {
-                drops.add(new ItemStack(Material.GUNPOWDER, count * (int)(Math.random() * 3)));
+                int powder = count * (int)(Math.random() * 3);
+                if (powder > 0) drops.add(new ItemStack(Material.GUNPOWDER, powder));
             }
             case SPIDER -> {
-                drops.add(new ItemStack(Material.STRING, count * (int)(Math.random() * 3)));
+                int string = count * (int)(Math.random() * 3);
+                if (string > 0) drops.add(new ItemStack(Material.STRING, string));
             }
             case ENDERMAN -> {
                 drops.add(new ItemStack(Material.ENDER_PEARL, count));
@@ -249,49 +260,62 @@ public class SpawnerStackManager implements Listener {
             return;
         }
 
+        // Determine the spawner's mob type and its required level
+        EntityType spawnerType = stackTypes.get(locKey);
+        String mobType = spawnerType != null ? spawnerType.name() : null;
+        int requiredLevel = 0;
+        if (mobType != null && mobsConfig != null) {
+            ConfigurationSection section = mobsConfig.getMobSection(mobType);
+            if (section != null) requiredLevel = section.getInt("level", 0);
+        }
+
+        // Check player level
+        int playerLevel = playerData != null ? playerData.getLevel(player.getUniqueId()) : 0;
+        if (requiredLevel > 0 && playerLevel < requiredLevel) {
+            player.sendMessage("§c§l(!) §cYou need HeadHunter Level §b" + requiredLevel + "§c to sell these heads!");
+            return;
+        }
+
         double totalValue = 0.0;
         int headsSold = 0;
         int itemsNotSold = 0;
+        List<ItemStack> remaining = new ArrayList<>();
 
-        // Get the spawner's mob type for price lookup
-        EntityType spawnerType = stackTypes.get(locKey);
-        String mobType = spawnerType != null ? spawnerType.name() : null;
+        double pricePerHead = getHeadPrice(mobType);
+        boolean awardsXP = playerData != null && requiredLevel > 0 && requiredLevel == playerLevel;
+        long xpPerHead = mobsConfig != null ? mobsConfig.getXpPerHead() : 0;
 
         for (ItemStack item : items) {
             if (item == null || item.getAmount() <= 0) continue;
 
-            // Check if this is a head (skull material)
             if (isHeadItem(item)) {
-                // Get price from mobs.yml
-                double pricePerHead = getHeadPrice(mobType);
-
                 if (pricePerHead > 0) {
-                    double itemValue = pricePerHead * item.getAmount();
-                    totalValue += itemValue;
+                    totalValue += pricePerHead * item.getAmount();
                     headsSold += item.getAmount();
                 } else {
                     itemsNotSold += item.getAmount();
                 }
             } else {
-                // Regular items - not sold yet (no worth system)
+                // Regular items have no sell system
                 itemsNotSold += item.getAmount();
             }
         }
 
-        // Give money to player
-        if (totalValue > 0) {
-            economy.depositPlayer(player, totalValue);
+        // Give money and award XP
+        if (totalValue > 0) economy.depositPlayer(player, totalValue);
+        if (headsSold > 0 && playerData != null) {
+            playerData.addHeadsSold(player.getUniqueId(), headsSold);
+            if (awardsXP && xpPerHead > 0) playerData.addXP(player.getUniqueId(), xpPerHead * headsSold);
         }
 
-        // Clear all storage (both sold and unsold items)
-        accumulatedItems.put(locKey, new ArrayList<>());
+        // Clear all storage
+        accumulatedItems.put(locKey, remaining);
         save();
 
-        // Send feedback message
         if (headsSold > 0) {
             player.sendMessage("§a§l(!) §aSold §b" + headsSold + " §ahead(s) for §6$" + String.format("%.2f", totalValue) + "§a!");
             if (itemsNotSold > 0) {
-                player.sendMessage("§e§l(!) §e" + itemsNotSold + " item(s) were discarded (no worth system yet).");
+                player.sendMessage("§e§l(!) §e" + itemsNotSold + " item(s) were discarded.");
             }
         } else if (itemsNotSold > 0) {
             player.sendMessage("§c§l(!) §cNo heads to sell. §e" + itemsNotSold + " §eitem(s) discarded.");
@@ -361,22 +385,24 @@ public class SpawnerStackManager implements Listener {
             return;
         }
 
-        for (ItemStack item : items) {
-            if (item == null || item.getAmount() <= 0) continue;
+        // Take up to 36 stacks (one inventory's worth) and keep the rest
+        int limit = Math.min(items.size(), 36);
+        List<ItemStack> toDrop = new ArrayList<>(items.subList(0, limit));
+        List<ItemStack> toKeep = new ArrayList<>(items.subList(limit, items.size()));
 
-            int remaining = item.getAmount();
-            while (remaining > 0) {
-                int give = Math.min(remaining, item.getMaxStackSize());
-                ItemStack stack = item.clone();
-                stack.setAmount(give);
-                player.getWorld().dropItemNaturally(player.getLocation(), stack);
-                remaining -= give;
-            }
+        org.bukkit.Location eyeLoc = player.getEyeLocation();
+        org.bukkit.util.Vector throwDir = eyeLoc.getDirection().normalize().multiply(0.3);
+        for (ItemStack stack : toDrop) {
+            org.bukkit.entity.Item entity = player.getWorld().dropItem(eyeLoc, stack.clone());
+            entity.setVelocity(throwDir);
+            entity.setPickupDelay(40);
         }
 
-        accumulatedItems.put(locKey, new ArrayList<>());
+        accumulatedItems.put(locKey, toKeep);
         save();
-        player.sendMessage("§a§l(!) §aDropped all items!");
+
+        player.playSound(eyeLoc, org.bukkit.Sound.ENTITY_ARROW_SHOOT, 1.0f, 0.8f);
+        player.sendMessage("§a§l(!) §aDropped §b" + limit + " §astacks!");
     }
 
     /**
@@ -389,46 +415,27 @@ public class SpawnerStackManager implements Listener {
         for (ItemStack drop : drops) {
             if (drop == null || drop.getAmount() <= 0) continue;
 
-            // Try to merge with existing similar item
-            boolean merged = false;
+            int maxStackSize = drop.getType().getMaxStackSize();
+            int remaining = drop.getAmount();
+
+            // Fill existing partial stacks before creating new ones
             for (ItemStack existing : storage) {
-                if (existing.isSimilar(drop)) {
-                    long totalAmount = (long) existing.getAmount() + drop.getAmount();
-                    int maxStackSize = existing.getType().getMaxStackSize();
+                if (remaining <= 0) break;
+                if (!existing.isSimilar(drop)) continue;
+                if (existing.getAmount() >= maxStackSize) continue;
 
-                    // If total exceeds max stack size, cap existing and add overflow as new stack(s)
-                    if (totalAmount > maxStackSize) {
-                        existing.setAmount(maxStackSize);
-                        long overflow = totalAmount - maxStackSize;
-
-                        // Add overflow as additional stacks
-                        while (overflow > 0) {
-                            ItemStack overflowStack = drop.clone();
-                            int stackAmount = (int) Math.min(overflow, maxStackSize);
-                            overflowStack.setAmount(stackAmount);
-                            storage.add(overflowStack);
-                            overflow -= stackAmount;
-                        }
-                    } else {
-                        existing.setAmount((int) totalAmount);
-                    }
-                    merged = true;
-                    break;
-                }
+                int space = maxStackSize - existing.getAmount();
+                int toAdd = Math.min(remaining, space);
+                existing.setAmount(existing.getAmount() + toAdd);
+                remaining -= toAdd;
             }
 
-            if (!merged) {
-                // Split into multiple stacks if amount exceeds max stack size
-                int maxStackSize = drop.getType().getMaxStackSize();
-                int remaining = drop.getAmount();
-
-                while (remaining > 0) {
-                    ItemStack stack = drop.clone();
-                    int stackAmount = Math.min(remaining, maxStackSize);
-                    stack.setAmount(stackAmount);
-                    storage.add(stack);
-                    remaining -= stackAmount;
-                }
+            // Create new full stacks for any leftover
+            while (remaining > 0) {
+                ItemStack stack = drop.clone();
+                stack.setAmount(Math.min(remaining, maxStackSize));
+                storage.add(stack);
+                remaining -= stack.getAmount();
             }
         }
 
@@ -594,6 +601,8 @@ public class SpawnerStackManager implements Listener {
         }
         stackCounts.remove(locKey);
         stackTypes.remove(locKey);
+        accumulatedItems.remove(locKey);
+        accumulatedXP.remove(locKey);
         save();
 
         // Always suppress vanilla drops — we handle them ourselves (no silk touch required).
@@ -732,34 +741,21 @@ public class SpawnerStackManager implements Listener {
             config.set(base + ".type",  type.name());
             config.set(base + ".count", count);
 
-            // Save accumulated items as serialized ItemStacks
+            // Save accumulated items using Paper NBT bytes → Base64 (preserves all metadata)
             List<ItemStack> items = accumulatedItems.get(locKey);
             if (items != null && !items.isEmpty()) {
-                List<Map<String, Object>> serializedItems = new ArrayList<>();
+                List<String> serializedItems = new ArrayList<>();
                 for (ItemStack item : items) {
-                    if (item != null && item.getAmount() > 0) {
-                        int maxStackSize = item.getType().getMaxStackSize();
-                        int amount = item.getAmount();
-
-                        // Split oversized stacks into multiple valid stacks for serialization
-                        if (amount > maxStackSize) {
-                            int remaining = amount;
-                            while (remaining > 0) {
-                                ItemStack splitStack = item.clone();
-                                int stackAmount = Math.min(remaining, maxStackSize);
-                                splitStack.setAmount(stackAmount);
-                                serializedItems.add(splitStack.serialize());
-                                remaining -= stackAmount;
-                            }
-                        } else {
-                            // Clamp to max stack size as safety (should not exceed but guard against edge cases)
-                            ItemStack safeStack = item.clone();
-                            safeStack.setAmount(Math.min(amount, maxStackSize));
-                            serializedItems.add(safeStack.serialize());
-                        }
+                    if (item == null || item.getAmount() <= 0) continue;
+                    try {
+                        String encoded = java.util.Base64.getEncoder()
+                                .encodeToString(item.serializeAsBytes());
+                        serializedItems.add(encoded);
+                    } catch (Exception e) {
+                        plugin.getLogger().warning("Failed to serialize item " + item.getType() + ": " + e.getMessage());
                     }
                 }
-                config.set(base + ".items", serializedItems);
+                if (!serializedItems.isEmpty()) config.set(base + ".items", serializedItems);
             }
 
             // Save accumulated XP
@@ -808,7 +804,7 @@ public class SpawnerStackManager implements Listener {
             int z     = sec.getInt("z");
             int count = sec.getInt("count", 1);
 
-            if (worldName == null || typeStr == null || count <= 1) continue;
+            if (worldName == null || typeStr == null) continue;
 
             World world = plugin.getServer().getWorld(worldName);
             if (world == null) {
@@ -832,25 +828,29 @@ public class SpawnerStackManager implements Listener {
             stackCounts.put(locKey, count);
             stackTypes.put(locKey, type);
 
-            // Load accumulated items (serialized ItemStacks)
+            // Load accumulated items — Base64/NBT format (with Map fallback for old saves)
             List<?> serializedItems = sec.getList("items");
             if (serializedItems != null && !serializedItems.isEmpty()) {
                 List<ItemStack> items = new ArrayList<>();
                 for (Object obj : serializedItems) {
-                    if (obj instanceof Map) {
+                    if (obj instanceof String encoded) {
+                        try {
+                            byte[] bytes = java.util.Base64.getDecoder().decode(encoded);
+                            items.add(ItemStack.deserializeBytes(bytes));
+                        } catch (Exception e) {
+                            plugin.getLogger().warning("Failed to deserialize item (bytes): " + e.getMessage());
+                        }
+                    } else if (obj instanceof Map) {
                         try {
                             @SuppressWarnings("unchecked")
-                            Map<String, Object> itemMap = (Map<String, Object>) obj;
-                            ItemStack item = ItemStack.deserialize(itemMap);
+                            ItemStack item = ItemStack.deserialize((Map<String, Object>) obj);
                             items.add(item);
                         } catch (Exception e) {
-                            plugin.getLogger().warning("Failed to deserialize item: " + e.getMessage());
+                            plugin.getLogger().warning("Failed to deserialize item (legacy map): " + e.getMessage());
                         }
                     }
                 }
-                if (!items.isEmpty()) {
-                    accumulatedItems.put(locKey, items);
-                }
+                if (!items.isEmpty()) accumulatedItems.put(locKey, items);
             }
 
             // Load accumulated XP
@@ -893,7 +893,6 @@ public class SpawnerStackManager implements Listener {
                 updateLabel(e.loc(), e.type(), e.count());
                 restartTask(e.loc(), e.type(), e.count());
             }
-            plugin.getLogger().info("Restored " + valid.size() + " stacked spawner(s) from spawner-data.yml.");
         }, 40L);
     }
 
@@ -915,7 +914,7 @@ public class SpawnerStackManager implements Listener {
         TextDisplay display = (TextDisplay) loc.getWorld().spawnEntity(labelLoc, EntityType.TEXT_DISPLAY);
         display.text(component);
         display.setBillboard(org.bukkit.entity.Display.Billboard.CENTER);
-        display.setPersistent(false);
+        display.setPersistent(true);
         display.getPersistentDataContainer().set(LABEL_KEY, PersistentDataType.BYTE, (byte) 1);
         labels.put(locKey, display.getUniqueId());
     }

@@ -36,7 +36,7 @@ public class HHAdminCommand implements CommandExecutor, TabCompleter {
     );
 
     private static final List<String> RELOAD_TARGETS = List.of(
-            "mobs", "spawners", "sidebar", "messages", "all"
+            "mobs", "spawners", "messages", "all"
     );
 
     private static final java.util.Map<String, Material> VANILLA_SKULLS = java.util.Map.of(
@@ -53,20 +53,18 @@ public class HHAdminCommand implements CommandExecutor, TabCompleter {
     private final Economy economy;
     private final MobsConfig mobsConfig;
     private final SpawnerConfig spawnerConfig;
-    private final SidebarConfig sidebarConfig;
     private final MessagesConfig messages;
     private final RankUpCommand rankUpCommand;
 
     public HHAdminCommand(JavaPlugin plugin, PlayerDataManager playerData, Economy economy,
                           MobsConfig mobsConfig, SpawnerConfig spawnerConfig,
-                          SidebarConfig sidebarConfig, MessagesConfig messages,
+                          MessagesConfig messages,
                           RankUpCommand rankUpCommand) {
         this.plugin          = plugin;
         this.playerData      = playerData;
         this.economy         = economy;
         this.mobsConfig      = mobsConfig;
         this.spawnerConfig   = spawnerConfig;
-        this.sidebarConfig   = sidebarConfig;
         this.messages        = messages;
         this.rankUpCommand   = rankUpCommand;
     }
@@ -266,33 +264,29 @@ public class HHAdminCommand implements CommandExecutor, TabCompleter {
 
         boolean reloadedMobs     = false;
         boolean reloadedSpawners = false;
-        boolean reloadedSidebar  = false;
         boolean reloadedMessages = false;
 
         switch (target) {
             case "mobs"     -> { mobsConfig.reload();     reloadedMobs     = true; }
             case "spawners" -> { spawnerConfig.reload();  reloadedSpawners = true; }
-            case "sidebar"  -> { sidebarConfig.reload();  reloadedSidebar  = true; }
             case "messages" -> { messages.reload();       reloadedMessages = true; }
             default         -> {
                 plugin.reloadConfig();
                 mobsConfig.reload();
                 spawnerConfig.reload();
-                sidebarConfig.reload();
                 messages.reload();
-                reloadedMobs = reloadedSpawners = reloadedSidebar = reloadedMessages = true;
+                reloadedMobs = reloadedSpawners = reloadedMessages = true;
             }
         }
 
-        String reloaded = buildReloadedStr(reloadedMobs, reloadedSpawners, reloadedSidebar, reloadedMessages);
+        String reloaded = buildReloadedStr(reloadedMobs, reloadedSpawners, reloadedMessages);
         sender.sendMessage(messages.get("admin-reloaded", "target", reloaded));
     }
 
-    private static String buildReloadedStr(boolean mobs, boolean spawners, boolean sidebar, boolean msgs) {
+    private static String buildReloadedStr(boolean mobs, boolean spawners, boolean msgs) {
         List<String> parts = new ArrayList<>();
         if (mobs)     parts.add("mobs");
         if (spawners) parts.add("spawners");
-        if (sidebar)  parts.add("sidebar");
         if (msgs)     parts.add("messages");
         return String.join(", ", parts);
     }
@@ -477,7 +471,7 @@ public class HHAdminCommand implements CommandExecutor, TabCompleter {
         sender.sendMessage(msg("&b/hh rankup <player>"));
         sender.sendMessage(msg("&b/hh reset <player>"));
         sender.sendMessage(msg("&b/hh info <player>"));
-        sender.sendMessage(msg("&b/hh reload [mobs|spawners|sidebar|messages|all]"));
+        sender.sendMessage(msg("&b/hh reload [mobs|spawners|messages|all]"));
         sender.sendMessage(msg("&b/hh testlevelup"));
         sender.sendMessage(msg("&b/hh top [page]"));
     }

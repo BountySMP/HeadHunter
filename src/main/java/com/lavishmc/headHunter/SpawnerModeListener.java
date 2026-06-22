@@ -1,6 +1,7 @@
 package com.lavishmc.headHunter;
 
 import org.bukkit.Material;
+import org.bukkit.Sound;
 import org.bukkit.block.CreatureSpawner;
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
@@ -39,6 +40,8 @@ public class SpawnerModeListener implements Listener {
             default -> null;
         };
         if (newMode == null) return;
+
+        player.playSound(player.getLocation(), Sound.UI_BUTTON_CLICK, 1.0f, 1.0f);
 
         // Persist the chosen mode on the spawner's tile-entity PDC.
         org.bukkit.Location loc = gui.getSpawnerLocation();

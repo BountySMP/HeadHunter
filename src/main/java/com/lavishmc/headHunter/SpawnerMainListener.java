@@ -1,5 +1,6 @@
 package com.lavishmc.headHunter;
 
+import org.bukkit.Sound;
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
@@ -31,14 +32,19 @@ public class SpawnerMainListener implements Listener {
         String locKey = spawnerStackManager.locKey(loc);
 
         switch (raw) {
-            case 11 -> // Open Storage
-                    SpawnerStorageGUI.open(player, loc, spawnerStackManager, 1, spawnerStackManager.getMobsConfig());
+            case 11 -> { // Open Storage
+                player.playSound(player.getLocation(), Sound.UI_BUTTON_CLICK, 1.0f, 1.0f);
+                SpawnerStorageGUI.open(player, loc, spawnerStackManager, 1, spawnerStackManager.getMobsConfig());
+            }
             case 15 -> { // Collect XP
+                player.playSound(player.getLocation(), Sound.ENTITY_EXPERIENCE_ORB_PICKUP, 1.0f, 1.0f);
                 spawnerStackManager.collectXP(locKey, player);
                 player.closeInventory();
             }
-            case 22 -> // Change Mode
-                    SpawnerModeGUI.open(player, loc, spawnerStackManager.getBlockMode(loc.getBlock()));
+            case 22 -> { // Change Mode
+                player.playSound(player.getLocation(), Sound.UI_BUTTON_CLICK, 1.0f, 1.0f);
+                SpawnerModeGUI.open(player, loc, spawnerStackManager.getBlockMode(loc.getBlock()));
+            }
         }
     }
 }

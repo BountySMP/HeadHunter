@@ -16,6 +16,7 @@ import org.bukkit.event.entity.CreatureSpawnEvent;
 import org.bukkit.entity.Player;
 import org.bukkit.event.entity.EntityDeathEvent;
 import org.bukkit.event.entity.EntityPickupItemEvent;
+import org.bukkit.event.entity.ItemSpawnEvent;
 import org.bukkit.event.world.ChunkUnloadEvent;
 import org.bukkit.inventory.meta.ItemMeta;
 import org.bukkit.inventory.ItemStack;
@@ -44,6 +45,9 @@ public class MobStackManager implements Listener {
 
     private static final int MAX_STACK = 9999;
     private SpawnerStackManager spawnerStackManager;
+    private final JavaPlugin plugin;
+    /** Locations of natural mob deaths in the current tick; cleared next tick. */
+    private final Set<Location> pendingNaturalDeathLocs = new java.util.HashSet<>();
 
     /**
      * Spawn reasons that are always allowed regardless of the natural-spawning
@@ -73,6 +77,7 @@ public class MobStackManager implements Listener {
 
     private final NamespacedKey stackKey;
     private final NamespacedKey headCountKey;
+    private final NamespacedKey naturalSpawnKey;
     /** When false, only SPAWNER / SPAWNER_EGG / COMMAND spawns are permitted (unless whitelisted). */
     private final boolean naturalSpawning;
     /** Entity types exempt from the natural-spawning ban. Empty when naturalSpawning is true. */
@@ -92,6 +97,7 @@ public class MobStackManager implements Listener {
     // -------------------------------------------------------------------------
 
     public MobStackManager(JavaPlugin plugin, MobsConfig mobsConfig) {
+        this.plugin = plugin;
         this.mobsConfig = mobsConfig;
         this.spawnerStackManager = null; // Set later via setSpawnerStackManager
         // Hardcode the "headhunter" namespace so the key is always
@@ -100,6 +106,8 @@ public class MobStackManager implements Listener {
         this.stackKey    = new NamespacedKey("headhunter", "stack_size");
         //noinspection deprecation
         this.headCountKey = new NamespacedKey("headhunter", "head_count");
+        //noinspection deprecation
+        this.naturalSpawnKey = new NamespacedKey("headhunter", "natural_spawn");
         this.naturalSpawning = plugin.getConfig().getBoolean("natural-spawning", false);
         if (naturalSpawning) {
             this.naturalSpawnWhitelist = Set.of();
@@ -165,6 +173,14 @@ public class MobStackManager implements Listener {
         }
 
         LivingEntity spawned = event.getEntity();
+
+        // Only spawner-block mobs participate in stacking. Natural / egg / command
+        // spawns are tagged so the death handler can strip head drops, then exit.
+        if (event.getSpawnReason() != CreatureSpawnEvent.SpawnReason.SPAWNER) {
+            spawned.getPersistentDataContainer()
+                   .set(naturalSpawnKey, PersistentDataType.BYTE, (byte) 1);
+            return;
+        }
         EntityType type = spawned.getType();
         ChunkKey key = chunkKey(spawned);
 
@@ -265,6 +281,18 @@ public class MobStackManager implements Listener {
             }
         }
 
+        // Natural spawns: strip head drops added by DropHeads.
+        // Two-layer defence: remove from event.getDrops() (catches plugins that add to the list)
+        // AND register the death location so ItemSpawnEvent can cancel any heads that DropHeads
+        // drops directly into the world via world.dropItemNaturally().
+        if (dead.getPersistentDataContainer().has(naturalSpawnKey, PersistentDataType.BYTE)) {
+            event.getDrops().removeIf(drop -> drop != null && SKULL_MATERIALS.contains(drop.getType()));
+            Location deathLoc = dead.getLocation().clone();
+            pendingNaturalDeathLocs.add(deathLoc);
+            plugin.getServer().getScheduler().runTask(plugin, () -> pendingNaturalDeathLocs.remove(deathLoc));
+            return;
+        }
+
         // For any mob from our stacked spawner, suppress vanilla XP entirely.
         // XP mode: clear ALL drops and accumulate XP; ECO mode: accumulate drops, no drops on ground.
         String spawnerLocKey = getSpawnerLocKey(dead);
@@ -343,6 +371,29 @@ public class MobStackManager implements Listener {
                     event.getDrops().add(overflow);
                     remaining -= 64;
                 }
+            }
+        }
+    }
+
+    // -------------------------------------------------------------------------
+    // Item spawn listener — secondary guard against DropHeads direct world drops
+    // -------------------------------------------------------------------------
+
+    /**
+     * Cancels any skull item that spawns at the location of a naturally-killed mob this tick.
+     * This catches DropHeads implementations that call world.dropItemNaturally() directly
+     * instead of (or in addition to) adding to EntityDeathEvent#getDrops().
+     */
+    @EventHandler(priority = EventPriority.LOWEST)
+    public void onItemSpawn(ItemSpawnEvent event) {
+        if (!SKULL_MATERIALS.contains(event.getEntity().getItemStack().getType())) return;
+        Location itemLoc = event.getEntity().getLocation();
+        for (Location deathLoc : pendingNaturalDeathLocs) {
+            if (deathLoc.getWorld() != null
+                    && deathLoc.getWorld().equals(itemLoc.getWorld())
+                    && deathLoc.distanceSquared(itemLoc) < 9.0) {
+                event.setCancelled(true);
+                return;
             }
         }
     }

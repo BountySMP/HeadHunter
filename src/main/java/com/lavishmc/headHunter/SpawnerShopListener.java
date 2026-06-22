@@ -1,6 +1,7 @@
 package com.lavishmc.headHunter;
 
 import net.milkbowl.vault.economy.Economy;
+import org.bukkit.Sound;
 import org.bukkit.entity.EntityType;
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
@@ -55,6 +56,7 @@ public class SpawnerShopListener implements Listener {
     private void handleMainShop(Player player, int slot) {
         // Tier buttons are at slots 1-6 (tier = slot value).
         if (slot < 1 || slot > 6) return;
+        player.playSound(player.getLocation(), Sound.UI_BUTTON_CLICK, 1.0f, 1.0f);
         int tier = slot;
         int playerLevel = playerData.getLevel(player.getUniqueId());
         SpawnerShopCategoryGUI.open(player, tier, playerLevel, mobsConfig);
@@ -72,9 +74,13 @@ public class SpawnerShopListener implements Listener {
         SpawnerShopCategoryGUI.MobEntry entry = entries.get(slot);
         int playerLevel = playerData.getLevel(player.getUniqueId());
 
-        // Locked — cancel silently, no message.
-        if (entry.level() > playerLevel && playerLevel < MobsConfig.MAX_LEVEL) return;
+        // Locked — deny sound, no message.
+        if (entry.level() > playerLevel && playerLevel < MobsConfig.MAX_LEVEL) {
+            player.playSound(player.getLocation(), Sound.BLOCK_NOTE_BLOCK_BASS, 1.0f, 1.0f);
+            return;
+        }
 
+        player.playSound(player.getLocation(), Sound.UI_BUTTON_CLICK, 1.0f, 1.0f);
         SpawnerShopQuantityGUI.open(player, entry, mobsConfig);
     }
 
@@ -85,13 +91,14 @@ public class SpawnerShopListener implements Listener {
     private void handleQuantity(Player player, int slot,
                                 SpawnerShopQuantityGUI quantityGUI) {
         switch (slot) {
-            case 12 -> quantityGUI.addQuantity(1);
-            case 13 -> quantityGUI.addQuantity(16);
-            case 14 -> quantityGUI.addQuantity(32);
-            case 15 -> quantityGUI.addQuantity(64);
+            case 12 -> { player.playSound(player.getLocation(), Sound.UI_BUTTON_CLICK, 1.0f, 1.0f); quantityGUI.addQuantity(1); }
+            case 13 -> { player.playSound(player.getLocation(), Sound.UI_BUTTON_CLICK, 1.0f, 1.0f); quantityGUI.addQuantity(16); }
+            case 14 -> { player.playSound(player.getLocation(), Sound.UI_BUTTON_CLICK, 1.0f, 1.0f); quantityGUI.addQuantity(32); }
+            case 15 -> { player.playSound(player.getLocation(), Sound.UI_BUTTON_CLICK, 1.0f, 1.0f); quantityGUI.addQuantity(64); }
             case 17 -> {
-                if (quantityGUI.canPurchase()
-                        && doPurchase(player, quantityGUI.getEntry(), quantityGUI.getQuantity())) {
+                if (!quantityGUI.canPurchase()) {
+                    player.playSound(player.getLocation(), Sound.BLOCK_NOTE_BLOCK_BASS, 1.0f, 1.0f);
+                } else if (doPurchase(player, quantityGUI.getEntry(), quantityGUI.getQuantity())) {
                     player.closeInventory();
                 }
             }
@@ -109,6 +116,7 @@ public class SpawnerShopListener implements Listener {
      */
     private boolean doPurchase(Player player, SpawnerShopCategoryGUI.MobEntry entry, int quantity) {
         if (economy == null) {
+            player.playSound(player.getLocation(), Sound.BLOCK_NOTE_BLOCK_BASS, 1.0f, 1.0f);
             player.sendMessage("§cThe economy system is unavailable.");
             return false;
         }
@@ -116,6 +124,7 @@ public class SpawnerShopListener implements Listener {
         long totalCost = entry.cost() * quantity;
         if (economy.getBalance(player) < totalCost) {
             long shortfall = totalCost - (long) economy.getBalance(player);
+            player.playSound(player.getLocation(), Sound.BLOCK_NOTE_BLOCK_BASS, 1.0f, 1.0f);
             player.sendMessage("§cYou need §e$" + shortfall
                     + " §cmore to purchase §e" + quantity + "x§c spawner(s).");
             return false;
@@ -125,6 +134,7 @@ public class SpawnerShopListener implements Listener {
         try {
             type = EntityType.valueOf(entry.typeName());
         } catch (IllegalArgumentException e) {
+            player.playSound(player.getLocation(), Sound.BLOCK_NOTE_BLOCK_BASS, 1.0f, 1.0f);
             player.sendMessage("§cInvalid spawner type — please contact an admin.");
             return false;
         }
@@ -145,6 +155,7 @@ public class SpawnerShopListener implements Listener {
         }
 
         String mobName = SpawnerShopCategoryGUI.formatMobName(entry.typeName());
+        player.playSound(player.getLocation(), Sound.ENTITY_EXPERIENCE_ORB_PICKUP, 1.0f, 1.0f);
         player.sendMessage("§aPurchased §b" + quantity + "x " + mobName
                 + " §aSpawner(s) for §e$" + totalCost + "§a!");
         return true;

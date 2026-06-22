@@ -1,5 +1,6 @@
 package com.lavishmc.headHunter;
 
+import org.bukkit.Sound;
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
@@ -32,18 +33,25 @@ public class SpawnerStorageListener implements Listener {
         int currentPage = gui.getPage();
 
         switch (raw) {
-            case 45 -> // Back to main GUI
-                    SpawnerMainGUI.open(player, loc, spawnerStackManager);
+            case 45 -> { // Back to main GUI
+                player.playSound(player.getLocation(), Sound.UI_BUTTON_CLICK, 1.0f, 1.0f);
+                SpawnerMainGUI.open(player, loc, spawnerStackManager);
+            }
             case 46 -> { // Collect All
+                player.playSound(player.getLocation(), Sound.ENTITY_EXPERIENCE_ORB_PICKUP, 1.0f, 1.0f);
                 spawnerStackManager.collectAll(locKey, player);
                 player.closeInventory();
             }
             case 48 -> { // Previous Page
                 if (currentPage > 1) {
+                    player.playSound(player.getLocation(), Sound.UI_BUTTON_CLICK, 1.0f, 1.0f);
                     SpawnerStorageGUI.open(player, loc, spawnerStackManager, currentPage - 1, spawnerStackManager.getMobsConfig());
+                } else {
+                    player.playSound(player.getLocation(), Sound.BLOCK_NOTE_BLOCK_BASS, 1.0f, 1.0f);
                 }
             }
             case 50 -> { // Next Page
+                player.playSound(player.getLocation(), Sound.UI_BUTTON_CLICK, 1.0f, 1.0f);
                 SpawnerStorageGUI.open(player, loc, spawnerStackManager, currentPage + 1, spawnerStackManager.getMobsConfig());
             }
             case 52 -> { // Drop All
@@ -51,6 +59,7 @@ public class SpawnerStorageListener implements Listener {
                 player.closeInventory();
             }
             case 53 -> { // Sell All
+                player.playSound(player.getLocation(), Sound.ENTITY_EXPERIENCE_ORB_PICKUP, 1.0f, 1.0f);
                 spawnerStackManager.sellAll(locKey, player);
                 player.closeInventory();
             }

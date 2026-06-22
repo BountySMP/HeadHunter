@@ -1,6 +1,7 @@
 package com.lavishmc.headHunter;
 
 import net.kyori.adventure.text.Component;
+import net.kyori.adventure.text.format.TextDecoration;
 import net.kyori.adventure.text.serializer.legacy.LegacyComponentSerializer;
 import org.bukkit.Bukkit;
 import org.bukkit.Location;
@@ -42,22 +43,16 @@ public class SpawnerModeGUI implements InventoryHolder {
         // Slot 2 — Eco Mode
         ItemStack eco = new ItemStack(Material.GOLD_INGOT);
         ItemMeta ecoMeta = eco.getItemMeta();
-        ecoMeta.displayName(LegacyComponentSerializer.legacySection().deserialize(
-                "§6§lEco Mode" + (ecoActive ? " §a✔" : "")));
-        ecoMeta.lore(List.of(
-                LegacyComponentSerializer.legacySection()
-                        .deserialize("§7Mobs drop heads and loot as normal.")));
+        ecoMeta.displayName(lc("§6§lEco Mode" + (ecoActive ? " §a✔" : "")));
+        ecoMeta.lore(List.of(lc("§7Mobs drop heads and loot as normal.")));
         eco.setItemMeta(ecoMeta);
         inventory.setItem(2, eco);
 
         // Slot 6 — XP Mode
         ItemStack xp = new ItemStack(Material.EXPERIENCE_BOTTLE);
         ItemMeta xpMeta = xp.getItemMeta();
-        xpMeta.displayName(LegacyComponentSerializer.legacySection().deserialize(
-                "§a§lXP Mode" + (!ecoActive ? " §a✔" : "")));
-        xpMeta.lore(List.of(
-                LegacyComponentSerializer.legacySection()
-                        .deserialize("§7Mobs drop XP only. No heads.")));
+        xpMeta.displayName(lc("§a§lXP Mode" + (!ecoActive ? " §a✔" : "")));
+        xpMeta.lore(List.of(lc("§7Mobs drop XP only. No heads.")));
         xp.setItemMeta(xpMeta);
         inventory.setItem(6, xp);
     }
@@ -73,5 +68,10 @@ public class SpawnerModeGUI implements InventoryHolder {
 
     public static void open(Player player, Location spawnerLoc, String currentMode) {
         player.openInventory(new SpawnerModeGUI(spawnerLoc, currentMode).inventory);
+    }
+
+    private static Component lc(String legacyText) {
+        return LegacyComponentSerializer.legacySection().deserialize(legacyText)
+                .decoration(TextDecoration.ITALIC, false);
     }
 }

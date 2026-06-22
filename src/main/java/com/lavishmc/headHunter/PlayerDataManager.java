@@ -196,6 +196,13 @@ public class PlayerDataManager {
         try { playerXP.put(UUID.fromString(key), value); } catch (IllegalArgumentException ignored) {}
     }
 
+    public void wipeAll() {
+        playerXP.clear();
+        playerLevel.clear();
+        totalHeadsSold.clear();
+        dataFile.delete();
+    }
+
     private void tryPutLevel(String key, int value) {
         try { playerLevel.put(UUID.fromString(key), value); } catch (IllegalArgumentException ignored) {}
     }

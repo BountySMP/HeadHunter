@@ -71,6 +71,7 @@ public final class MiscUtils{
 		}
 	}
 
+	@SuppressWarnings("removal")
 	public static final HashMap<String, Sound> getNoteblockSounds(){
 		HashMap<String, Sound> nbSounds = new HashMap</*txtrKey, Sound*/>();
 

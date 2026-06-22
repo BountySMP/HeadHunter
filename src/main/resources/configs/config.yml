@@ -210,6 +210,5 @@ spawnhead-command-entity-select-limit: 100
 # HeadHunter economy settings are now in separate config files:
 # - mobs.yml      (mob data, XP thresholds, level progression)
 # - spawners.yml  (spawn rates, stack max)
-# - sidebar.yml   (scoreboard layout, boss bar colors)
 # - messages.yml  (all player-facing messages, player-head settings)
-# Reload any of them with: /hh reload [mobs|spawners|sidebar|messages|all]
+# Reload any of them with: /hh reload [mobs|spawners|messages|all]

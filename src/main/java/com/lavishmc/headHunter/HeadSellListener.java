@@ -1,8 +1,5 @@
 package com.lavishmc.headHunter;
 
-import net.kyori.adventure.bossbar.BossBar;
-import net.kyori.adventure.text.Component;
-import net.kyori.adventure.text.serializer.legacy.LegacyComponentSerializer;
 import net.kyori.adventure.text.serializer.plain.PlainTextComponentSerializer;
 import net.milkbowl.vault.economy.Economy;
 import org.bukkit.Material;
@@ -13,15 +10,12 @@ import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
 import org.bukkit.event.block.Action;
 import org.bukkit.event.player.PlayerInteractEvent;
-import org.bukkit.event.player.PlayerQuitEvent;
 import org.bukkit.inventory.EquipmentSlot;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.inventory.meta.ItemMeta;
 import org.bukkit.plugin.java.JavaPlugin;
 
 import java.util.Set;
-import java.util.UUID;
-import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * Handles right-click head selling.
@@ -41,22 +35,17 @@ public class HeadSellListener implements Listener {
             Material.DRAGON_HEAD
     );
 
-    private final JavaPlugin plugin;
     private final Economy economy;
     private final PlayerDataManager playerData;
     private final MobsConfig mobsConfig;
     private final MessagesConfig messages;
-    private final SidebarConfig sidebarConfig;
-    private final ConcurrentHashMap<UUID, BossBar> activeBossBars = new ConcurrentHashMap<>();
 
     public HeadSellListener(JavaPlugin plugin, Economy economy, PlayerDataManager playerData,
-                            MobsConfig mobsConfig, MessagesConfig messages, SidebarConfig sidebarConfig) {
-        this.plugin        = plugin;
+                            MobsConfig mobsConfig, MessagesConfig messages) {
         this.economy       = economy;
         this.playerData    = playerData;
         this.mobsConfig    = mobsConfig;
         this.messages      = messages;
-        this.sidebarConfig = sidebarConfig;
     }
 
     @EventHandler(priority = EventPriority.HIGH, ignoreCancelled = false)
@@ -118,7 +107,6 @@ public class HeadSellListener implements Listener {
         if (economy != null) economy.depositPlayer(player, (double) totalMoney);
         playerData.addHeadsSold(player.getUniqueId(), count);
 
-        long xpBefore = playerData.getXP(player.getUniqueId());
         if (totalXP > 0) playerData.addXP(player.getUniqueId(), totalXP);
 
         player.sendMessage(messages.get("sell-success",
@@ -126,8 +114,6 @@ public class HeadSellListener implements Listener {
                 "mob", formatMobName(mobType),
                 "money", String.valueOf(totalMoney),
                 "xp", String.valueOf(totalXP)));
-
-        showXpBar(player, xpBefore);
     }
 
     private void sellAllHeads(Player player, ItemStack item,
@@ -167,7 +153,6 @@ public class HeadSellListener implements Listener {
         if (economy != null) economy.depositPlayer(player, (double) totalMoney);
         playerData.addHeadsSold(player.getUniqueId(), totalCount);
 
-        long xpBefore = playerData.getXP(player.getUniqueId());
         if (totalXP > 0) playerData.addXP(player.getUniqueId(), totalXP);
 
         player.sendMessage(messages.get("sell-success",
@@ -175,50 +160,6 @@ public class HeadSellListener implements Listener {
                 "mob", formatMobName(mobType),
                 "money", String.valueOf(totalMoney),
                 "xp", String.valueOf(totalXP)));
-
-        showXpBar(player, xpBefore);
-    }
-
-    private void showXpBar(Player player, long xpBefore) {
-        UUID uuid = player.getUniqueId();
-        long totalXP  = playerData.getXP(uuid);
-        long xpGained = totalXP - xpBefore;
-
-        int levelNow = playerData.getLevel(uuid);
-        int tierNow  = (levelNow - 1) / 5 + 1;
-
-        long xpRequired = playerData.getXpRequiredForLevel(levelNow);
-        boolean maxed = levelNow >= playerData.getMaxLevel();
-        int   percent = maxed ? 100 : (xpRequired > 0 ? (int) Math.min(100, totalXP * 100 / xpRequired) : 100);
-        float fill    = maxed ? 1.0f : (xpRequired > 0 ? Math.min(1.0f, (float) totalXP / xpRequired) : 1.0f);
-
-        BossBar.Color color = sidebarConfig.getTierBossBarColor(tierNow);
-
-        String titleStr = messages.getRaw("sell-xp-bar",
-                "level", String.valueOf(levelNow),
-                "percent", String.valueOf(percent),
-                "xp", String.valueOf(xpGained));
-        Component title = LegacyComponentSerializer.legacyAmpersand().deserialize(titleStr);
-        BossBar bar = BossBar.bossBar(title, fill, color, BossBar.Overlay.PROGRESS);
-
-        BossBar existing = activeBossBars.remove(uuid);
-        if (existing != null) player.hideBossBar(existing);
-
-        activeBossBars.put(uuid, bar);
-        player.showBossBar(bar);
-
-        plugin.getServer().getScheduler().runTaskLater(plugin, () -> {
-            if (activeBossBars.remove(uuid, bar)) {
-                Player online = plugin.getServer().getPlayer(uuid);
-                if (online != null) online.hideBossBar(bar);
-            }
-        }, 60L);
-    }
-
-    @EventHandler(priority = EventPriority.MONITOR)
-    public void onPlayerQuit(PlayerQuitEvent event) {
-        BossBar bar = activeBossBars.remove(event.getPlayer().getUniqueId());
-        if (bar != null) event.getPlayer().hideBossBar(bar);
     }
 
     private static boolean isMobHead(ItemStack item) {
