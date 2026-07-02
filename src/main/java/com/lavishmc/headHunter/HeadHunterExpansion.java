@@ -56,8 +56,19 @@ public class HeadHunterExpansion extends PlaceholderExpansion {
             case "xp" -> String.valueOf(playerDataManager.getXP(player.getUniqueId()));
             case "heads_sold" -> String.valueOf(playerDataManager.getTotalHeadsSold(player.getUniqueId()));
             case "rank" -> getRankName(playerDataManager.getLevel(player.getUniqueId()));
+            case "progress" -> getProgress(player.getUniqueId());
             default -> null;
         };
+    }
+
+    private String getProgress(java.util.UUID uuid) {
+        int level = playerDataManager.getLevel(uuid);
+        if (level >= playerDataManager.getMaxLevel()) return "MAX";
+        long xp = playerDataManager.getXP(uuid);
+        long required = playerDataManager.getXpRequiredForLevel(level);
+        if (required <= 0) return "0%";
+        int pct = (int) Math.min(100, xp * 100 / required);
+        return pct + "%";
     }
 
     /**

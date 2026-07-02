@@ -82,6 +82,17 @@ public class MobsConfig {
         return config.getConfigurationSection("mobs." + mobType);
     }
 
+    /** Returns the mob key whose progression level equals {@code level}, or null if none. */
+    public String getMobKeyForLevel(int level) {
+        ConfigurationSection mobs = config.getConfigurationSection("mobs");
+        if (mobs == null) return null;
+        for (String key : mobs.getKeys(false)) {
+            ConfigurationSection section = mobs.getConfigurationSection(key);
+            if (section != null && section.getInt("level", 0) == level) return key;
+        }
+        return null;
+    }
+
     public ConfigurationSection getMobsSection() {
         return config.getConfigurationSection("mobs");
     }

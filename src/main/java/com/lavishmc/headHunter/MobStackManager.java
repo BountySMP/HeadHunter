@@ -15,8 +15,8 @@ import org.bukkit.event.Listener;
 import org.bukkit.event.entity.CreatureSpawnEvent;
 import org.bukkit.entity.Player;
 import org.bukkit.event.entity.EntityDeathEvent;
+import com.lavishmc.headHunter.DropHeads.events.EntityBeheadEvent;
 import org.bukkit.event.entity.EntityPickupItemEvent;
-import org.bukkit.event.entity.ItemSpawnEvent;
 import org.bukkit.event.world.ChunkUnloadEvent;
 import org.bukkit.inventory.meta.ItemMeta;
 import org.bukkit.inventory.ItemStack;
@@ -46,8 +46,6 @@ public class MobStackManager implements Listener {
     private static final int MAX_STACK = 9999;
     private SpawnerStackManager spawnerStackManager;
     private final JavaPlugin plugin;
-    /** Locations of natural mob deaths in the current tick; cleared next tick. */
-    private final Set<Location> pendingNaturalDeathLocs = new java.util.HashSet<>();
 
     /**
      * Spawn reasons that are always allowed regardless of the natural-spawning
@@ -258,6 +256,19 @@ public class MobStackManager implements Listener {
     // -------------------------------------------------------------------------
 
     /**
+     * Cancels DropHeads' EntityBeheadEvent for naturally-spawned mobs.
+     * This fires inside DropHeads' triggerHeadDropEvent() before the head item
+     * is created or dropped via any DropMode (EVENT, SPAWN_RANDOM, GIVE, etc.).
+     */
+    @EventHandler(priority = EventPriority.NORMAL)
+    public void onEntityBehead(EntityBeheadEvent event) {
+        if (!(event.getEntity() instanceof LivingEntity le)) return;
+        if (le.getPersistentDataContainer().has(naturalSpawnKey, PersistentDataType.BYTE)) {
+            event.setCancelled(true);
+        }
+    }
+
+    /**
      * Runs at MONITOR so DropHeads (which registers at LOW by default) has
      * already appended head items to the drop list before we multiply them.
      */
@@ -281,15 +292,10 @@ public class MobStackManager implements Listener {
             }
         }
 
-        // Natural spawns: strip head drops added by DropHeads.
-        // Two-layer defence: remove from event.getDrops() (catches plugins that add to the list)
-        // AND register the death location so ItemSpawnEvent can cancel any heads that DropHeads
-        // drops directly into the world via world.dropItemNaturally().
+        // Natural spawns: EntityBeheadEvent cancellation (onEntityBehead) is the primary guard.
+        // This removeIf is a safety net for any vanilla skull drops that bypass DropHeads.
         if (dead.getPersistentDataContainer().has(naturalSpawnKey, PersistentDataType.BYTE)) {
             event.getDrops().removeIf(drop -> drop != null && SKULL_MATERIALS.contains(drop.getType()));
-            Location deathLoc = dead.getLocation().clone();
-            pendingNaturalDeathLocs.add(deathLoc);
-            plugin.getServer().getScheduler().runTask(plugin, () -> pendingNaturalDeathLocs.remove(deathLoc));
             return;
         }
 
@@ -371,29 +377,6 @@ public class MobStackManager implements Listener {
                     event.getDrops().add(overflow);
                     remaining -= 64;
                 }
-            }
-        }
-    }
-
-    // -------------------------------------------------------------------------
-    // Item spawn listener — secondary guard against DropHeads direct world drops
-    // -------------------------------------------------------------------------
-
-    /**
-     * Cancels any skull item that spawns at the location of a naturally-killed mob this tick.
-     * This catches DropHeads implementations that call world.dropItemNaturally() directly
-     * instead of (or in addition to) adding to EntityDeathEvent#getDrops().
-     */
-    @EventHandler(priority = EventPriority.LOWEST)
-    public void onItemSpawn(ItemSpawnEvent event) {
-        if (!SKULL_MATERIALS.contains(event.getEntity().getItemStack().getType())) return;
-        Location itemLoc = event.getEntity().getLocation();
-        for (Location deathLoc : pendingNaturalDeathLocs) {
-            if (deathLoc.getWorld() != null
-                    && deathLoc.getWorld().equals(itemLoc.getWorld())
-                    && deathLoc.distanceSquared(itemLoc) < 9.0) {
-                event.setCancelled(true);
-                return;
             }
         }
     }

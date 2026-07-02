@@ -65,6 +65,13 @@ commands:
     permission: headhunter.basic
     permission-message: You do not have permission to use this command.
 
+  level:
+    description: View your HeadHunter level, current mob, and rank-up progress
+    usage: /level
+    aliases: [hhlevel, mylevel]
+    permission: headhunter.basic
+    permission-message: You do not have permission to use this command.
+
   spawnershop:
     description: Open the spawner shop
     usage: /spawnershop

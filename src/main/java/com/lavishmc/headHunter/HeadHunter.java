@@ -31,6 +31,10 @@ public final class HeadHunter extends DropHeads {
         return playerDataManager;
     }
 
+    public SpawnerStackManager getSpawnerStackManager() {
+        return spawnerStackManager;
+    }
+
     @Override
     public void onEvDisable() {
         if (playerDataManager != null) playerDataManager.flush();
@@ -176,6 +180,11 @@ public final class HeadHunter extends DropHeads {
             return true;
         };
         Objects.requireNonNull(getCommand("hhtest")).setExecutor(hhTest);
+
+        // /level
+        LevelCommand levelCommand = new LevelCommand(playerDataManager, mobsConfig, spawnerStackManager);
+        Objects.requireNonNull(getCommand("level")).setExecutor(levelCommand);
+        getServer().getPluginManager().registerEvents(new LevelGUIListener(), this);
 
         // /spawnershop
         Objects.requireNonNull(getCommand("spawnershop")).setExecutor(new SpawnerShopCommand());
